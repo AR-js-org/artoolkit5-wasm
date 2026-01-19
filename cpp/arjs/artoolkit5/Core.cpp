@@ -207,12 +207,12 @@ int32_t Core::getMarkerPose44(int32_t index, float* out16) const {
   if (index < 0 || index >= arHandle_->marker_num) return ERROR_MARKER_INDEX_OUT_OF_BOUNDS;
 
   ARdouble trans34[3][4];
-  const ARMarkerInfo& marker = arHandle_->markerInfo[index];
+  ARMarkerInfo* marker = &arHandle_->markerInfo[index];
 
   // TODO: you likely want marker physical width as input parameter.
   // For now, you can assume some default (e.g. 80mm) or require caller to set it.
   const ARdouble markerWidth = 80.0;
-  arGetTransMatSquare(ar3DHandle_, &marker, markerWidth, trans34);
+  arGetTransMatSquare(ar3DHandle_, marker, markerWidth, trans34);
 
   transform34ToMat44_(trans34, out16);
   return ERROR_OK;

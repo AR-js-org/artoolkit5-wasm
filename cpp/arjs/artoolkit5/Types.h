@@ -21,4 +21,3 @@ namespace arjs::artoolkit5 {
     };
 
 } // namespace arjs::artoolkit5
-} // namespace arjs::artoolkit5

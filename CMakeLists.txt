@@ -78,7 +78,11 @@ file(GLOB WEBARKIT_ARICP_SOURCES
 )
 
 file(GLOB WEBARKIT_ARUTIL_SOURCES
-        "${WEBARKITLIB_SRC_DIR}/ARUtil/*.c"
+        "${WEBARKITLIB_SRC_DIR}/ARUtil/log.c"
+        "${WEBARKITLIB_SRC_DIR}/ARUtil/system.c"
+        "${WEBARKITLIB_SRC_DIR}/ARUtil/thread_sub.c"
+        "${WEBARKITLIB_SRC_DIR}/ARUtil/time.c"
+        "${WEBARKITLIB_SRC_DIR}/ARUtil/nftw.c"
 )
 
 file(GLOB WEBARKIT_VIDEO_SOURCES
