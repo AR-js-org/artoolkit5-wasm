@@ -149,7 +149,7 @@ target_link_options(artoolkit5 PRIVATE
         "SHELL:-s WASM=1"
         "SHELL:-s MODULARIZE=1"
         "SHELL:-s EXPORT_ES6=1"
-        "SHELL:-s USE_ES6_IMPORT_META=0"
+        #"SHELL:-s USE_ES6_IMPORT_META=0"
 
         # runtime
         "SHELL:-s ALLOW_MEMORY_GROWTH=1"
@@ -159,7 +159,8 @@ target_link_options(artoolkit5 PRIVATE
         "SHELL:-s ENVIRONMENT=web"
 
         # JS access to heaps + malloc/free (useful for your TS wrapper)
-        "SHELL:-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF32','_malloc','_free']"
+        "SHELL:-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF32']"
+        "SHELL:-s EXPORTED_FUNCTIONS=['_malloc','_free']"
 )
 
 # If you temporarily rely on Emscripten FS (e.g. writing cparam/patt into MEMFS), export FS too:

@@ -61,14 +61,14 @@ int32_t Core::loadCameraFromPath(const char* cparamPath) {
   return id;
 }
 
-int32_t Core::loadCameraFromBuffer(const uint8_t* data, int32_t len) {
+int32_t Core::loadCameraFromBuffer(int dataPtr, int32_t len) {
   // NOTE: ARToolKit's arParamLoad expects a file path.
   // To truly avoid FS, you may need:
   // - a library function that loads from memory (if available), OR
   // - implement a small adapter that writes to MEMFS and then calls arParamLoad on that path.
   //
   // For now, treat this as TODO (return invalid).
-  (void)data;
+  (void)dataPtr;
   (void)len;
   return ERROR_INVALID_ARGUMENT;
 }
@@ -141,21 +141,23 @@ void Core::updateCameraLens_() {
   for (int i = 0; i < 16; i++) cameraLens_[i] = static_cast<float>(tmp[i]);
 }
 
-uint8_t* Core::getFrameBufferRGBA() {
-  return frameRGBA_.empty() ? nullptr : frameRGBA_.data();
+int Core::getFrameBufferRGBA() const {
+  return frameRGBA_.empty() ? 0 : static_cast<int>(reinterpret_cast<uintptr_t>(frameRGBA_.data()));
 }
 
-uint8_t* Core::getFrameBufferGRAY() {
-  return frameGRAY_.empty() ? nullptr : frameGRAY_.data();
+int Core::getFrameBufferGRAY() const {
+  return frameGRAY_.empty() ? 0 : static_cast<int>(reinterpret_cast<uintptr_t>(frameGRAY_.data()));
 }
 
-int32_t Core::detect(PixelFormat fmt) {
+int32_t Core::detect(int fmt) {
   if (!arHandle_) return ERROR_NOT_INITIALIZED;
 
   AR2VideoBufferT buff{};
   buff.fillFlag = 1;
 
-  switch (fmt) {
+  auto pf = static_cast<PixelFormat>(fmt);
+
+  switch (pf) {
     case PixelFormat::RGBA8:
       buff.buff = frameRGBA_.data();
       // If you want ARToolKit to compute luma internally, keep buffLuma null.
@@ -204,16 +206,16 @@ int32_t Core::getMarkerSummary(int32_t index, MarkerSummary* out) const {
   return ERROR_OK;
 }
 
-int32_t Core::getMarkerPose44(int32_t index, float* out16) const {
-  if (!out16) return ERROR_INVALID_ARGUMENT;
+int32_t Core::getMarkerPose44(int32_t index, int outPtr) const {
+  if (!outPtr) return ERROR_INVALID_ARGUMENT;
   if (!arHandle_ || !ar3DHandle_) return ERROR_NOT_INITIALIZED;
   if (index < 0 || index >= arHandle_->marker_num) return ERROR_MARKER_INDEX_OUT_OF_BOUNDS;
+
+  auto* out16 = reinterpret_cast<float*>(static_cast<uintptr_t>(outPtr));
 
   ARdouble trans34[3][4];
   ARMarkerInfo* marker = &arHandle_->markerInfo[index];
 
-  // TODO: you likely want marker physical width as input parameter.
-  // For now, you can assume some default (e.g. 80mm) or require caller to set it.
   const ARdouble markerWidth = 80.0;
   arGetTransMatSquare(ar3DHandle_, marker, markerWidth, trans34);
 
@@ -250,12 +252,8 @@ void Core::transform34ToMat44_(const ARdouble src34[3][4], float* out16) {
   out16[15] = 1.0f;
 }
 
-int32_t Core::addPatternFromBuffer(const uint8_t* pattData, int32_t pattLen) {
-  // NOTE: arPattLoad expects a filesystem path.
-  // To support in-memory patterns, you can:
-  // - write pattData to MEMFS at a unique path, then call arPattLoad().
-  // - OR implement your own patt parser and feed into ARToolKit (harder).
-  (void)pattData;
+int32_t Core::addPatternFromBuffer(int pattPtr, int32_t pattLen) {
+  (void)pattPtr;
   (void)pattLen;
   return ERROR_INVALID_ARGUMENT;
 }

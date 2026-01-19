@@ -50,8 +50,8 @@ interface ARToolKitCore {
 
   // MarkerSummary via out-buffer would be ideal, but WebIDL binder doesn't do structs well.
   // We expose primitive getters.
-  long getMarkerKind(long index);
-  long getMarkerId(long index);
-  float getMarkerConfidence(long index);
+  //long getMarkerKind(long index);
+  //long getMarkerId(long index);
+  //float getMarkerConfidence(long index);
   long getMarkerPose44(long index, long outPtr); // writes 16 floats
 };

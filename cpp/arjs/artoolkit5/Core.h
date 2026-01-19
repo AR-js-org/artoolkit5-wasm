@@ -29,7 +29,7 @@ public:
 
   // ---- Camera ----
   // Recommended: no FS dependency. Returns cameraId >=0, or <0 on error.
-  int32_t loadCameraFromBuffer(const uint8_t* data, int32_t len);
+  int32_t loadCameraFromBuffer(int dataPtr, int32_t len);
 
   // Optional legacy path (only if you mount FS and write files).
   int32_t loadCameraFromPath(const char* cparamPath);
@@ -41,8 +41,7 @@ public:
 
   // ---- Markers ----
   // Pattern: .patt file contents (ASCII) in memory.
-  int32_t addPatternFromBuffer(const uint8_t* pattData, int32_t pattLen);
-
+  int32_t addPatternFromBuffer(int pattPtr, int32_t pattLen);
   void setMatrixCodeType(int32_t type);
 
   // ---- Config ----
@@ -66,14 +65,14 @@ public:
 
   // ---- WASM-owned frame buffers ----
   // Valid until teardown() or setup() is called again.
-  uint8_t* getFrameBufferRGBA();
-  uint8_t* getFrameBufferGRAY();
+  int getFrameBufferRGBA() const;
+  int getFrameBufferGRAY() const;
 
   int32_t getFrameWidth() const { return width_; }
   int32_t getFrameHeight() const { return height_; }
 
   // Detect markers using the current internal frame buffer for given format.
-  int32_t detect(PixelFormat fmt);
+  int32_t detect(int fmt);
 
   // ---- Results ----
   int32_t getMarkerCount() const;
@@ -83,7 +82,7 @@ public:
 
   // Writes 16 floats pose matrix (column-major) to out16.
   // 0 on success; negative on error.
-  int32_t getMarkerPose44(int32_t index, float* out16) const;
+  int32_t getMarkerPose44(int32_t index, int outPtr) const;
 
 private:
   void destroyHandles_();
