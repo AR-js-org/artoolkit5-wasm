@@ -34,7 +34,7 @@ set(IDL_FILE "${CMAKE_SOURCE_DIR}/idl/ARToolKitCore.idl")
 set(WEBIDL_OUT_DIR "${CMAKE_BINARY_DIR}/webidl")
 file(MAKE_DIRECTORY "${WEBIDL_OUT_DIR}")
 
-#set(GENERATED_GLUE_CPP "${WEBIDL_OUT_DIR}/ARToolKitCore_glue.cpp")
+set(GENERATED_GLUE_CPP "${WEBIDL_OUT_DIR}/ARToolKitCore_glue.cpp")
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
@@ -166,7 +166,7 @@ set_target_properties(artoolkit5 PROPERTIES
 #        DEPENDS "${GENERATED_GLUE_JS}"
 #        COMMENT "Copying WebIDL glue JS to dist/"
 #)
-add_dependencies(copy_webidl_glue artoolkit5)
+# add_dependencies(copy_webidl_glue artoolkit5)
 
 message(STATUS "Output: ${DIST_DIR}")
 message(STATUS "WebARKitLib: ${WEBARKITLIB_DIR}")
