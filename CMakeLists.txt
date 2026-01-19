@@ -34,7 +34,8 @@ set(IDL_FILE "${CMAKE_SOURCE_DIR}/idl/ARToolKitCore.idl")
 set(WEBIDL_OUT_DIR "${CMAKE_BINARY_DIR}/webidl")
 file(MAKE_DIRECTORY "${WEBIDL_OUT_DIR}")
 
-set(GENERATED_GLUE_CPP "${WEBIDL_OUT_DIR}/ARToolKitCore_glue.cpp")
+set(GENERATED_GLUE_BASE "${WEBIDL_OUT_DIR}/ARToolKitCore_glue")
+set(GENERATED_GLUE_CPP  "${GENERATED_GLUE_BASE}.cpp")
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
@@ -60,7 +61,7 @@ message(STATUS "Using WebIDL binder: ${WEBIDL_BINDER_PY}")
 add_custom_command(
         OUTPUT "${GENERATED_GLUE_CPP}"
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${WEBIDL_OUT_DIR}"
-        COMMAND "${Python3_EXECUTABLE}" "${WEBIDL_BINDER_PY}" "${IDL_FILE}" "${GENERATED_GLUE_CPP}"
+        COMMAND "${Python3_EXECUTABLE}" "${WEBIDL_BINDER_PY}" "${IDL_FILE}" "${GENERATED_GLUE_BASE}"
         DEPENDS "${IDL_FILE}"
         COMMENT "Generating WebIDL binder glue from ${IDL_FILE}"
         VERBATIM
@@ -113,6 +114,11 @@ add_executable(artoolkit5
         ${WEBARKIT_VIDEO_SOURCES}
         # ${WEBARKIT_ARMULTI_SOURCES}
         "${GENERATED_GLUE_CPP}"
+)
+
+# Inject shim ONLY for the generated WebIDL glue C++ file (avoid affecting C sources).
+set_source_files_properties("${GENERATED_GLUE_CPP}" PROPERTIES
+        COMPILE_OPTIONS "-include;${CMAKE_SOURCE_DIR}/cpp/bindings/webidl/ARToolKitCore_shim.h"
 )
 
 target_include_directories(artoolkit5 PRIVATE
