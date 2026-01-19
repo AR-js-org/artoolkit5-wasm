@@ -37,7 +37,7 @@ public:
   int32_t setCamera(int32_t cameraId);
 
   // Writes 16 floats (column-major) to out16 (must point to 16 floats).
-  void getCameraLens(float* out16) const;
+  void getCameraLens(int outPtr) const;
 
   // ---- Markers ----
   // Pattern: .patt file contents (ASCII) in memory.

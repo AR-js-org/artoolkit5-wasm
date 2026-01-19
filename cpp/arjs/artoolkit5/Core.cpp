@@ -1,5 +1,5 @@
 #include "Core.h"
-
+#include <cstdint>
 #include <cstring>
 #include <unordered_map>
 
@@ -107,8 +107,11 @@ int32_t Core::setCamera(int32_t cameraId) {
   return ERROR_OK;
 }
 
-void Core::getCameraLens(float* out16) const {
-  if (!out16) return;
+void Core::getCameraLens(int outPtr) const {
+  //arParamLT_if (!arParamLT_) return;
+  if (!outPtr) return;
+
+  auto* out16 = reinterpret_cast<float*>(static_cast<uintptr_t>(outPtr));
   std::memcpy(out16, cameraLens_, sizeof(cameraLens_));
 }
 
