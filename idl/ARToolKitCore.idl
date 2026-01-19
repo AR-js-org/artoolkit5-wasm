@@ -1,0 +1,57 @@
+[Constructor]
+interface ARToolKitCore {
+  // ---- error codes (optional but convenient) ----
+  const long ERROR_OK = 0;
+  const long ERROR_NOT_INITIALIZED = -10;
+  const long ERROR_INVALID_ARGUMENT = -11;
+  const long ERROR_ARCONTROLLER_NOT_FOUND = -1;
+  const long ERROR_MARKER_INDEX_OUT_OF_BOUNDS = -3;
+
+  // ---- lifecycle ----
+  long setup(long width, long height);
+  long teardown();
+
+  // ---- camera ----
+  long loadCameraFromPath(DOMString cparamPath);
+  long loadCameraFromBuffer(long dataPtr, long dataLen); // TODO in C++: implement via MEMFS or memory loader
+  long setCamera(long cameraId);
+  void getCameraLens(long outPtr); // writes 16 floats
+
+  // ---- markers ----
+  long addPatternFromBuffer(long pattPtr, long pattLen); // TODO in C++: implement via MEMFS or memory loader
+  void setMatrixCodeType(long type);
+
+  // ---- config ----
+  void setThreshold(long threshold);
+  long getThreshold();
+  void setThresholdMode(long mode);
+  long getThresholdMode();
+  void setDebugMode(long enable);
+  long getDebugMode();
+  void setImageProcMode(long mode);
+  long getImageProcMode();
+  void setProjectionNearPlane(float nearPlane);
+  float getProjectionNearPlane();
+  void setProjectionFarPlane(float farPlane);
+  float getProjectionFarPlane();
+
+  // ---- buffers ----
+  long getFrameBufferRGBA();
+  long getFrameBufferGRAY();
+  long getFrameWidth();
+  long getFrameHeight();
+
+  // ---- detect ----
+  // 0=RGBA8, 1=GRAY8
+  long detect(long pixelFormat);
+
+  // ---- results ----
+  long getMarkerCount();
+
+  // MarkerSummary via out-buffer would be ideal, but WebIDL binder doesn't do structs well.
+  // We expose primitive getters.
+  long getMarkerKind(long index);
+  long getMarkerId(long index);
+  float getMarkerConfidence(long index);
+  long getMarkerPose44(long index, long outPtr); // writes 16 floats
+};
