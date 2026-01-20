@@ -84,6 +84,12 @@ public:
   // 0 on success; negative on error.
   int32_t getMarkerPose44(int32_t index, int outPtr) const;
 
+static int32_t ERROR_OK_();
+static int32_t ERROR_NOT_INITIALIZED_();
+static int32_t ERROR_INVALID_ARGUMENT_();
+static int32_t ERROR_ARCONTROLLER_NOT_FOUND_();
+static int32_t ERROR_MARKER_INDEX_OUT_OF_BOUNDS_();
+
 private:
   void destroyHandles_();
   int32_t ensureHandles_();

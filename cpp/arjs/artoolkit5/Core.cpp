@@ -1,4 +1,5 @@
 #include "Core.h"
+#include "Errors.h"
 #include <cstdint>
 #include <cstring>
 #include <unordered_map>
@@ -327,5 +328,11 @@ void Core::destroyHandles_() {
     paramLT_ = nullptr;
   }
 }
+
+int32_t Core::ERROR_OK_() { return ERROR_OK; }
+int32_t Core::ERROR_NOT_INITIALIZED_() { return ERROR_NOT_INITIALIZED; }
+int32_t Core::ERROR_INVALID_ARGUMENT_() { return ERROR_INVALID_ARGUMENT; }
+int32_t Core::ERROR_ARCONTROLLER_NOT_FOUND_() { return ERROR_ARCONTROLLER_NOT_FOUND; }
+int32_t Core::ERROR_MARKER_INDEX_OUT_OF_BOUNDS_() { return ERROR_MARKER_INDEX_OUT_OF_BOUNDS; }
 
 } // namespace arjs::artoolkit5

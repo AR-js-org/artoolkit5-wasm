@@ -1,11 +1,11 @@
 interface ARToolKitCore {
   void ARToolKitCore();
   // ---- error codes (optional but convenient) ----
-  const long ERROR_OK = 0;
-  const long ERROR_NOT_INITIALIZED = -10;
-  const long ERROR_INVALID_ARGUMENT = -11;
-  const long ERROR_ARCONTROLLER_NOT_FOUND = -1;
-  const long ERROR_MARKER_INDEX_OUT_OF_BOUNDS = -3;
+   static long ERROR_OK_();
+   static long ERROR_NOT_INITIALIZED_();
+   static long ERROR_INVALID_ARGUMENT_();
+   static long ERROR_ARCONTROLLER_NOT_FOUND_();
+   static long ERROR_MARKER_INDEX_OUT_OF_BOUNDS_();
 
   // ---- lifecycle ----
   long setup(long width, long height);
