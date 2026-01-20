@@ -1,5 +1,5 @@
-[Constructor]
 interface ARToolKitCore {
+  void ARToolKitCore();
   // ---- error codes (optional but convenient) ----
   const long ERROR_OK = 0;
   const long ERROR_NOT_INITIALIZED = -10;

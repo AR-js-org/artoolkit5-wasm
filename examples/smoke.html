@@ -22,6 +22,10 @@
   const ptr = mod._malloc(64);
   mod._free(ptr);
 
+  const core = new mod.ARToolKitCore();
+  core.setup(10, 10);
+  console.log(core)
+
   document.body.append("OK");
 </script>
 </body>

@@ -36,6 +36,7 @@ file(MAKE_DIRECTORY "${WEBIDL_OUT_DIR}")
 
 set(GENERATED_GLUE_BASE "${WEBIDL_OUT_DIR}/ARToolKitCore_glue")
 set(GENERATED_GLUE_CPP  "${GENERATED_GLUE_BASE}.cpp")
+set(GENERATED_GLUE_JS "${GENERATED_GLUE_BASE}.js")
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
@@ -59,11 +60,10 @@ message(STATUS "Using WebIDL binder: ${WEBIDL_BINDER_PY}")
 
 # Newer webidl_binder.py interface: webidl_binder.py infile outfile
 add_custom_command(
-        OUTPUT "${GENERATED_GLUE_CPP}"
-        COMMAND "${CMAKE_COMMAND}" -E make_directory "${WEBIDL_OUT_DIR}"
+        OUTPUT "${GENERATED_GLUE_CPP}" "${GENERATED_GLUE_JS}"
         COMMAND "${Python3_EXECUTABLE}" "${WEBIDL_BINDER_PY}" "${IDL_FILE}" "${GENERATED_GLUE_BASE}"
         DEPENDS "${IDL_FILE}"
-        COMMENT "Generating WebIDL binder glue from ${IDL_FILE}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         VERBATIM
 )
 
@@ -162,6 +162,7 @@ target_link_options(artoolkit5 PRIVATE
         # JS access to heaps + malloc/free (useful for your TS wrapper)
         "SHELL:-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF32']"
         "SHELL:-s EXPORTED_FUNCTIONS=['_malloc','_free']"
+        "SHELL:--post-js ${GENERATED_GLUE_JS}"
 )
 
 # If you temporarily rely on Emscripten FS (e.g. writing cparam/patt into MEMFS), export FS too:
