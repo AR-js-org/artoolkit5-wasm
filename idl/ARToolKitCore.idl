@@ -48,10 +48,10 @@ interface ARToolKitCore {
   // ---- camera ----
   long loadCameraFromPath(DOMString cparamPath);
   long loadCameraFromBuffer(long dataPtr, long dataLen); // TODO in C++: implement via MEMFS or memory loader
-  long setCamera(long id, long cameraID);
   void getCameraLens(long outPtr); // writes 16 floats
 
   // ---- markers ----
+  long loadMarker(DOMString pattName, long pattidPtr, long pattHandlePtr);
   long addPatternFromBuffer(long pattPtr, long pattLen); // TODO in C++: implement via MEMFS or memory loader
   void setMatrixCodeType(long type);
 
