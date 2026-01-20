@@ -38,3 +38,7 @@ build/
 # Ide files
 .idea/
 
+# node and npm
+
+node_modules
+

@@ -26,6 +26,19 @@
   core.setup(10, 10);
   console.log(core)
   console.log("error not initialized: ", core.ERROR_NOT_INITIALIZED_())
+  console.log("AR_DEBUG_ENABLE:", core.AR_DEBUG_ENABLE_?.());
+  console.log("LOG_DEBUG:", mod.ARToolKitCore.AR_LOG_LEVEL_DEBUG_?.());
+  console.log("THRESH_MANUAL:", mod.ARToolKitCore.AR_LABELING_THRESH_MODE_MANUAL_?.());
+
+  console.log("instance keys", Object.getOwnPropertyNames(core));
+  console.log("proto keys", Object.getOwnPropertyNames(Object.getPrototypeOf(core)));
+  console.log("ctor keys", Object.getOwnPropertyNames(mod.ARToolKitCore));
+
+  console.log("inst LOG_DEBUG", core.AR_LOG_LEVEL_DEBUG_?.());
+  console.log("proto LOG_DEBUG", Object.getPrototypeOf(core).AR_LOG_LEVEL_DEBUG_?.());
+  console.log("ctor LOG_DEBUG", mod.ARToolKitCore.AR_LOG_LEVEL_DEBUG_?.());
+
+  console.log("Module LOG_DEBUG", mod.AR_LOG_LEVEL_DEBUG); // a volte le mette su Module
 
   document.body.append("OK");
 </script>

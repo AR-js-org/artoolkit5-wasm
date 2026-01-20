@@ -1,0 +1,32 @@
+{
+  "name": "@kalwalt/artoolkit5-wasm",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/index.js",
+    "dist/index.js.map",
+    "dist/index.d.ts",
+    "dist/index.d.ts.map",
+    "dist/artoolkit5.js",
+    "dist/artoolkit5.wasm"
+  ],
+  "scripts": {
+    "build:wasm": "echo \"run your emcmake/cmake build here\"",
+    "build:wrap": "vite build && tsc -p tsconfig.build.json",
+    "build": "npm run build:wasm && npm run build:wrap"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  }
+}
