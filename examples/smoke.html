@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>artoolkit5 wasm smoke</title>
+</head>
+<body>
+<script type="module">
+  import createModule from "./../dist/artoolkit5.js";
+
+  const mod = await createModule({
+    locateFile(path) {
+      return "./../dist/" + path; // risolve artoolkit5.wasm
+    },
+  });
+
+  console.log("Loaded", mod);
+  console.log("HEAPU8 length:", mod.HEAPU8?.length);
+  console.log("_malloc:", typeof mod._malloc);
+  console.log("_free:", typeof mod._free);
+
+  const ptr = mod._malloc(64);
+  mod._free(ptr);
+
+  document.body.append("OK");
+</script>
+</body>
+</html>
