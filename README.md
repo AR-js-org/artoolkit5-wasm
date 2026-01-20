@@ -1,1 +1,5 @@
 # artoolkit5-wasm
+
+
+## Build with docker
+docker run --rm -it -v "${PWD}:/src" -w /src emscripten/emsdk bash -lc "emcmake cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j"                           

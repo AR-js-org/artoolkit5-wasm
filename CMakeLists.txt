@@ -149,6 +149,7 @@ target_link_options(artoolkit5 PRIVATE
         "SHELL:-s WASM=1"
         "SHELL:-s MODULARIZE=1"
         "SHELL:-s EXPORT_ES6=1"
+        "SHELL:-s EXPORT_NAME='createARToolKit5Module'"
         #"SHELL:-s USE_ES6_IMPORT_META=0"
 
         # runtime
