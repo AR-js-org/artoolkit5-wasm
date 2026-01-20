@@ -5,8 +5,10 @@
   <title>artoolkit5 wasm smoke</title>
 </head>
 <body>
+
 <script type="module">
   import createModule from "./../dist/artoolkit5.js";
+  import { fetchBinary, storeDataFile, loadCameraFromUrl } from "./utils.js";
 
   const mod = await createModule({
     locateFile(path) {
@@ -23,7 +25,10 @@
   mod._free(ptr);
 
   const core = new mod.ARToolKitCore();
-  core.setup(10, 10, 0);
+  loadCameraFromUrl(mod, core, "./data/camera_para.dat").then((cameraId) => {
+    console.log("cameraId:", cameraId);
+    core.setup(640, 480, cameraId);
+  });
   console.log(core)
   console.log("error not initialized: ", core.ERROR_NOT_INITIALIZED_())
   console.log("AR_DEBUG_ENABLE:", core.AR_DEBUG_ENABLE_?.());

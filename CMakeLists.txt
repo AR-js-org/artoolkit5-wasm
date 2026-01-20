@@ -160,7 +160,7 @@ target_link_options(artoolkit5 PRIVATE
         "SHELL:-s ENVIRONMENT=web"
 
         # JS access to heaps + malloc/free (useful for your TS wrapper)
-        "SHELL:-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF32']"
+        "SHELL:-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF32','FS']"
         "SHELL:-s EXPORTED_FUNCTIONS=['_malloc','_free']"
         "SHELL:--post-js ${GENERATED_GLUE_JS}"
 )

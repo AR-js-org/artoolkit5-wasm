@@ -29,13 +29,14 @@ int32_t Core::setup(int32_t width, int32_t height, int32_t cameraID) {
   this->width = width;
   this->height = height;
 
+  this->videoFrameSize = width * height * 4 * sizeof(ARUint8);
+
   frameRGBA_.resize(static_cast<size_t>(this->width) * static_cast<size_t>(this->height) * 4u);
   frameGRAY_.resize(static_cast<size_t>(this->width) * static_cast<size_t>(this->height));
 
-  this->pattHandle = arPattCreateHandle();
-  if (!this->pattHandle) return ERROR_NOT_INITIALIZED;
-
   setCamera(id, cameraID);
+
+  ARLOGi("Allocated videoFrameSize %d", this->videoFrameSize);
 
   // Camera and handles are created in setCamera(), after a camera is loaded.
   return this->id;
@@ -60,6 +61,8 @@ int32_t Core::loadCameraFromPath(const char* cparamPath) {
 
   ARParam p;
   if (arParamLoad(cparamPath, 1, &p) < 0) {
+    ARLOGe("loadCamera(): Error loading parameter file %s for camera.",
+                 cparamPath);
     return ERROR_INVALID_ARGUMENT;
   }
   const int32_t id = gCameraId++;
@@ -96,7 +99,7 @@ int32_t Core::setCamera(int32_t id, int32_t cameraID) {
   ARLOGi("*** Camera Parameter ***\n");
   arParamDisp(&(this->param));
 
- deleteHandle();
+  deleteHandle();
   if (this->paramLT != nullptr) {
     deleteHandle();
   }
@@ -114,11 +117,10 @@ int32_t Core::setCamera(int32_t id, int32_t cameraID) {
     ARLOGe("setCamera(): Error: arCreateHandle.");
     return -1;
   }
-// AR_DEFAULT_PIXEL_FORMAT
+  // AR_DEFAULT_PIXEL_FORMAT
   int set = arSetPixelFormat(this->arHandle, this->pixFormat);
 
-
-   this->ar3DHandle = ar3DCreateHandle(&(this->param));
+  this->ar3DHandle = ar3DCreateHandle(&(this->param));
   if (this->ar3DHandle == nullptr) {
     ARLOGe("setCamera(): Error creating 3D handle");
     return -1;
