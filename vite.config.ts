@@ -8,8 +8,15 @@ export default defineConfig({
             formats: ["es"],
             fileName: () => "index.js",
         },
+        rollupOptions: {
+            external: [
+                // lascia l'emscripten output come file separato in dist/
+                "../dist/artoolkit5.js",
+                "./dist/artoolkit5.js"
+            ],
+        },
         sourcemap: true,
         target: "es2020",
-        emptyOutDir: false // IMPORTANT: non cancellare dist/artoolkit5.wasm e dist/artoolkit5.js
+        emptyOutDir: false,
     },
 });
