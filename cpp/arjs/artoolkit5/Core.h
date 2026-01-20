@@ -84,11 +84,46 @@ public:
   // 0 on success; negative on error.
   int32_t getMarkerPose44(int32_t index, int outPtr) const;
 
-static int32_t ERROR_OK_();
-static int32_t ERROR_NOT_INITIALIZED_();
-static int32_t ERROR_INVALID_ARGUMENT_();
-static int32_t ERROR_ARCONTROLLER_NOT_FOUND_();
-static int32_t ERROR_MARKER_INDEX_OUT_OF_BOUNDS_();
+  // ---- ARToolKit constants (from <AR/ar.h> etc.) ----
+  static int32_t ERROR_OK_();
+  static int32_t ERROR_NOT_INITIALIZED_();
+  static int32_t ERROR_INVALID_ARGUMENT_();
+  static int32_t ERROR_ARCONTROLLER_NOT_FOUND_();
+  static int32_t ERROR_MARKER_INDEX_OUT_OF_BOUNDS_();
+
+  static int32_t AR_DEBUG_DISABLE_();
+  static int32_t AR_DEBUG_ENABLE_();
+
+  static int32_t AR_DEFAULT_LABELING_THRESH_();
+
+  static int32_t AR_IMAGE_PROC_FRAME_IMAGE_();
+  static int32_t AR_IMAGE_PROC_FIELD_IMAGE_();
+  static int32_t AR_DEFAULT_IMAGE_PROC_MODE_();
+
+  static int32_t AR_MAX_LOOP_COUNT_();
+  static int32_t AR_LOOP_BREAK_THRESH_();
+
+  static int32_t AR_LOG_LEVEL_DEBUG_();
+  static int32_t AR_LOG_LEVEL_INFO_();
+  static int32_t AR_LOG_LEVEL_WARN_();
+  static int32_t AR_LOG_LEVEL_ERROR_();
+  static int32_t AR_LOG_LEVEL_REL_INFO_();
+
+  static int32_t AR_LABELING_THRESH_MODE_MANUAL_();
+  static int32_t AR_LABELING_THRESH_MODE_AUTO_MEDIAN_();
+  static int32_t AR_LABELING_THRESH_MODE_AUTO_OTSU_();
+  static int32_t AR_LABELING_THRESH_MODE_AUTO_ADAPTIVE_();
+
+  static int32_t AR_MARKER_INFO_CUTOFF_PHASE_NONE_();
+  static int32_t AR_MARKER_INFO_CUTOFF_PHASE_PATTERN_EXTRACTION_();
+  static int32_t AR_MARKER_INFO_CUTOFF_PHASE_MATCH_GENERIC_();
+  static int32_t AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONTRAST_();
+  static int32_t AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_NOT_FOUND_();
+  static int32_t AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_EDC_FAIL_();
+  static int32_t AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONFIDENCE_();
+  static int32_t AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_();
+  static int32_t AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_MULTI_();
+  static int32_t AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES_();
 
 private:
   void destroyHandles_();
