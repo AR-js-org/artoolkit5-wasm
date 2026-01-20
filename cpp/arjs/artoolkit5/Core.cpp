@@ -8,8 +8,6 @@ namespace arjs::artoolkit5 {
 
 // Simple camera registry similar to legacy approach.
 // (You can replace with a different ownership model later.)
-static int32_t gCameraId = 0;
-static std::unordered_map<int32_t, ARParam> gCameraParams;
 
 Core::Core() = default;
 
@@ -34,7 +32,10 @@ int32_t Core::setup(int32_t width, int32_t height, int32_t cameraID) {
   frameRGBA_.resize(static_cast<size_t>(this->width) * static_cast<size_t>(this->height) * 4u);
   frameGRAY_.resize(static_cast<size_t>(this->width) * static_cast<size_t>(this->height));
 
-  setCamera(id, cameraID);
+  if (setCamera(id, cameraID) < 0) {
+    ARLOGe("Core::setup(): Error setting camera ID %d.", cameraID);
+    return ERROR_INVALID_ARGUMENT;
+  };
 
   ARLOGi("Allocated videoFrameSize %d", this->videoFrameSize);
 
@@ -65,8 +66,8 @@ int32_t Core::loadCameraFromPath(const char* cparamPath) {
                  cparamPath);
     return ERROR_INVALID_ARGUMENT;
   }
-  const int32_t id = gCameraId++;
-  gCameraParams[id] = p;
+  const int32_t id = gCameraID++;
+  cameraParams[id] = p;
   return id;
 }
 
@@ -110,7 +111,7 @@ int32_t Core::setCamera(int32_t id, int32_t cameraID) {
     return -1;
   }
 
-  ARLOGi("setCamera(): arParamLTCreated\n..%d, %d\n", (this->paramLT->param).xsize, (this->paramLT->param).ysize);
+  ARLOGi("setCamera(): arParamLTCreated: %d, %d\n", (this->paramLT->param).xsize, (this->paramLT->param).ysize);
 
   // setup camera
   if ((this->arHandle = arCreateHandle(this->paramLT)) == nullptr) {
@@ -131,6 +132,20 @@ int32_t Core::setCamera(int32_t id, int32_t cameraID) {
 
   return 0;
 }
+
+int32_t Core::loadMarker(const char *patt_name, int patt_id_ptr, int pattHandle_ptr) {
+		// Loading only 1 pattern in this example.
+    auto* patt_id = reinterpret_cast<float*>(static_cast<uintptr_t>(patt_id_ptr));
+    //auto* arhandle = reinterpret_cast<ARHandle*>(static_cast<uintptr_t>(arhandlePtr));
+    auto** pattHandle = reinterpret_cast<ARPattHandle**>(static_cast<uintptr_t>(pattHandle_ptr));
+		if ((*patt_id = arPattLoad(*pattHandle, patt_name)) < 0) {
+			ARLOGe("loadMarker(): Error loading pattern file %s.\n", patt_name);
+			arPattDeleteHandle(*pattHandle);
+			return 0;
+		}
+
+		return 1;
+	}
 
 void Core::getCameraLens(int outPtr) const {
   //arParamLT_if (!arParamLT_) return;

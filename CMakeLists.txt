@@ -79,6 +79,7 @@ file(GLOB WEBARKIT_ARICP_SOURCES
 )
 
 file(GLOB WEBARKIT_ARUTIL_SOURCES
+        "${WEBARKITLIB_SRC_DIR}/ARUtil/file_utils.c"
         "${WEBARKITLIB_SRC_DIR}/ARUtil/log.c"
         "${WEBARKITLIB_SRC_DIR}/ARUtil/system.c"
         "${WEBARKITLIB_SRC_DIR}/ARUtil/thread_sub.c"
@@ -105,6 +106,10 @@ if(WEBARKIT_AR_SOURCES_COUNT EQUAL 0)
     message(FATAL_ERROR "No sources found in ${WEBARKITLIB_SRC_DIR}/AR. Check WebARKitLib checkout.")
 endif()
 
+set(USE_FLAGS "-s USE_ZLIB=1")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${USE_FLAGS}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${USE_FLAGS}")
+
 # ---- Build target ----
 add_executable(artoolkit5
         ${WRAPPER_SOURCES}
@@ -127,6 +132,7 @@ target_include_directories(artoolkit5 PRIVATE
         "${WEBARKITLIB_SRC_DIR}"
         "${WEBIDL_OUT_DIR}"
 )
+
 
 # If you later need extra internal include dirs (depends on WebARKitLib headers), add them here:
 # target_include_directories(artoolkit5 PRIVATE "${WEBARKITLIB_SRC_DIR}/WebARKit")

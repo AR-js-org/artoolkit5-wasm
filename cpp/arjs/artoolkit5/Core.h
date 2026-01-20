@@ -42,6 +42,8 @@ public:
 
   int32_t setCamera(int32_t id, int32_t cameraID);
 
+  int32_t loadMarker(const char *patt_name, int patt_id_ptr, int pattHandle_ptr);
+
   // Writes 16 floats (column-major) to out16 (must point to 16 floats).
   void getCameraLens(int outPtr) const;
 
