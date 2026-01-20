@@ -23,7 +23,7 @@
   mod._free(ptr);
 
   const core = new mod.ARToolKitCore();
-  core.setup(10, 10);
+  core.setup(10, 10, 0);
   console.log(core)
   console.log("error not initialized: ", core.ERROR_NOT_INITIALIZED_())
   console.log("AR_DEBUG_ENABLE:", core.AR_DEBUG_ENABLE_?.());

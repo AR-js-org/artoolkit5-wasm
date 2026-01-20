@@ -42,13 +42,13 @@ interface ARToolKitCore {
    static long AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES_();
 
   // ---- lifecycle ----
-  long setup(long width, long height);
+  long setup(long width, long height, long cameraID);
   long teardown();
 
   // ---- camera ----
   long loadCameraFromPath(DOMString cparamPath);
   long loadCameraFromBuffer(long dataPtr, long dataLen); // TODO in C++: implement via MEMFS or memory loader
-  long setCamera(long cameraId);
+  long setCamera(long id, long cameraID);
   void getCameraLens(long outPtr); // writes 16 floats
 
   // ---- markers ----

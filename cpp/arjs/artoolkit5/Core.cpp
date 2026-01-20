@@ -17,36 +17,41 @@ Core::~Core() {
   teardown();
 }
 
-int32_t Core::setup(int32_t width, int32_t height) {
+int32_t Core::setup(int32_t width, int32_t height, int32_t cameraID) {
   if (width <= 0 || height <= 0) return ERROR_INVALID_ARGUMENT;
+
+  int id = gARControllerID++;
+  this->id = id;
 
   // Re-init safe.
   teardown();
 
-  width_ = width;
-  height_ = height;
+  this->width = width;
+  this->height = height;
 
-  frameRGBA_.resize(static_cast<size_t>(width_) * static_cast<size_t>(height_) * 4u);
-  frameGRAY_.resize(static_cast<size_t>(width_) * static_cast<size_t>(height_));
+  frameRGBA_.resize(static_cast<size_t>(this->width) * static_cast<size_t>(this->height) * 4u);
+  frameGRAY_.resize(static_cast<size_t>(this->width) * static_cast<size_t>(this->height));
 
-  pattHandle_ = arPattCreateHandle();
-  if (!pattHandle_) return ERROR_NOT_INITIALIZED;
+  this->pattHandle = arPattCreateHandle();
+  if (!this->pattHandle) return ERROR_NOT_INITIALIZED;
+
+  setCamera(id, cameraID);
 
   // Camera and handles are created in setCamera(), after a camera is loaded.
-  return ERROR_OK;
+  return this->id;
 }
 
 int32_t Core::teardown() {
-  destroyHandles_();
-  if (pattHandle_) {
-    arPattDeleteHandle(pattHandle_);
-    pattHandle_ = nullptr;
+  deleteHandle();
+  if (this->pattHandle) {
+    arPattDeleteHandle(this->pattHandle);
+    this->pattHandle = nullptr;
   }
 
   frameRGBA_.clear();
   frameGRAY_.clear();
-  width_ = 0;
-  height_ = 0;
+  this->width = 0;
+  this->height = 0;
   return ERROR_OK;
 }
 
@@ -74,38 +79,55 @@ int32_t Core::loadCameraFromBuffer(int dataPtr, int32_t len) {
   return ERROR_INVALID_ARGUMENT;
 }
 
-int32_t Core::setCamera(int32_t cameraId) {
-  if (!pattHandle_) return ERROR_NOT_INITIALIZED;
-
-  auto it = gCameraParams.find(cameraId);
-  if (it == gCameraParams.end()) return ERROR_INVALID_ARGUMENT;
-
-  param_ = it->second;
-
-  // Resize camera params to match current frame size.
-  if (param_.xsize != width_ || param_.ysize != height_) {
-    arParamChangeSize(&param_, width_, height_, &param_);
+int32_t Core::setCamera(int32_t id, int32_t cameraID) {
+  if (cameraParams.find(cameraID) == cameraParams.end()) {
+    return -1;
   }
 
-  destroyHandles_();
+  this->param = cameraParams[cameraID];
 
-  paramLT_ = arParamLTCreate(&param_, AR_PARAM_LT_DEFAULT_OFFSET);
-  if (!paramLT_) return ERROR_NOT_INITIALIZED;
+  if (this->param.xsize != this->width || this->param.ysize != this->height) {
+    ARLOGw("*** Camera Parameter resized from %d, %d. ***\n", this->param.xsize,
+           this->param.ysize);
+    arParamChangeSize(&(this->param), this->width, this->height,
+                      &(this->param));
+  }
 
-  arHandle_ = arCreateHandle(paramLT_);
-  if (!arHandle_) return ERROR_NOT_INITIALIZED;
+  ARLOGi("*** Camera Parameter ***\n");
+  arParamDisp(&(this->param));
 
-  // Default pixel format: we'll set per-detect via AR2VideoBufferT.luma,
-  // but arHandle_ still needs a pixel format. Keep RGBA default.
-  arSetPixelFormat(arHandle_, AR_PIXEL_FORMAT_RGBA);
+ deleteHandle();
+  if (this->paramLT != nullptr) {
+    deleteHandle();
+  }
 
-  arPattAttach(arHandle_, pattHandle_);
+  this->paramLT = arParamLTCreate(&(this->param), AR_PARAM_LT_DEFAULT_OFFSET);
+  if (!this->paramLT) {
+      ARLOGe("setCamera(): Error: arParamLTCreate for cameraID %d.", cameraID);
+    return -1;
+  }
 
-  ar3DHandle_ = ar3DCreateHandle(&param_);
-  if (!ar3DHandle_) return ERROR_NOT_INITIALIZED;
+  ARLOGi("setCamera(): arParamLTCreated\n..%d, %d\n", (this->paramLT->param).xsize, (this->paramLT->param).ysize);
 
-  updateCameraLens_();
-  return ERROR_OK;
+  // setup camera
+  if ((this->arHandle = arCreateHandle(this->paramLT)) == nullptr) {
+    ARLOGe("setCamera(): Error: arCreateHandle.");
+    return -1;
+  }
+// AR_DEFAULT_PIXEL_FORMAT
+  int set = arSetPixelFormat(this->arHandle, this->pixFormat);
+
+
+   this->ar3DHandle = ar3DCreateHandle(&(this->param));
+  if (this->ar3DHandle == nullptr) {
+    ARLOGe("setCamera(): Error creating 3D handle");
+    return -1;
+  }
+
+  arglCameraFrustumRH(&(this->paramLT->param), this->nearPlane,
+                      this->farPlane, this->cameraLens);
+
+  return 0;
 }
 
 void Core::getCameraLens(int outPtr) const {
@@ -113,33 +135,33 @@ void Core::getCameraLens(int outPtr) const {
   if (!outPtr) return;
 
   auto* out16 = reinterpret_cast<float*>(static_cast<uintptr_t>(outPtr));
-  std::memcpy(out16, cameraLens_, sizeof(cameraLens_));
+  std::memcpy(out16, this->cameraLens, sizeof(this->cameraLens));
 }
 
 void Core::setProjectionNearPlane(float nearPlane) {
-  nearPlane_ = nearPlane;
+  this->nearPlane = nearPlane;
   updateCameraLens_();
 }
 
 float Core::getProjectionNearPlane() const {
-  return nearPlane_;
+  return this->nearPlane;
 }
 
 void Core::setProjectionFarPlane(float farPlane) {
-  farPlane_ = farPlane;
+  this->farPlane = farPlane;
   updateCameraLens_();
 }
 
 float Core::getProjectionFarPlane() const {
-  return farPlane_;
+  return this->farPlane;
 }
 
 void Core::updateCameraLens_() {
-  if (!paramLT_) return;
+  if (!this->paramLT) return;
   // Fills 16 doubles; we store as float.
   ARdouble tmp[16];
-  arglCameraFrustumRH(&paramLT_->param, nearPlane_, farPlane_, tmp);
-  for (int i = 0; i < 16; i++) cameraLens_[i] = static_cast<float>(tmp[i]);
+  arglCameraFrustumRH(&this->paramLT->param, this->nearPlane, this->farPlane, tmp);
+  for (int i = 0; i < 16; i++) this->cameraLens[i] = static_cast<float>(tmp[i]);
 }
 
 int Core::getFrameBufferRGBA() const {
@@ -151,7 +173,7 @@ int Core::getFrameBufferGRAY() const {
 }
 
 int32_t Core::detect(int fmt) {
-  if (!arHandle_) return ERROR_NOT_INITIALIZED;
+  if (!this->arHandle) return ERROR_NOT_INITIALIZED;
 
   AR2VideoBufferT buff{};
   buff.fillFlag = 1;
@@ -175,20 +197,20 @@ int32_t Core::detect(int fmt) {
       return ERROR_INVALID_ARGUMENT;
   }
 
-  return arDetectMarker(arHandle_, &buff);
+  return arDetectMarker(this->arHandle, &buff);
 }
 
 int32_t Core::getMarkerCount() const {
-  if (!arHandle_) return 0;
-  return arHandle_->marker_num;
+  if (!this->arHandle) return 0;
+  return this->arHandle->marker_num;
 }
 
 int32_t Core::getMarkerSummary(int32_t index, MarkerSummary* out) const {
   if (!out) return ERROR_INVALID_ARGUMENT;
-  if (!arHandle_) return ERROR_NOT_INITIALIZED;
-  if (index < 0 || index >= arHandle_->marker_num) return ERROR_MARKER_INDEX_OUT_OF_BOUNDS;
+  if (!this->arHandle) return ERROR_NOT_INITIALIZED;
+  if (index < 0 || index >= this->arHandle->marker_num) return ERROR_MARKER_INDEX_OUT_OF_BOUNDS;
 
-  const ARMarkerInfo& m = arHandle_->markerInfo[index];
+  const ARMarkerInfo& m = this->arHandle->markerInfo[index];
 
   // Determine kind: if a matrix id is present, treat as barcode; else pattern.
   // (You may want a more robust rule based on arHandle configuration.)
@@ -209,16 +231,16 @@ int32_t Core::getMarkerSummary(int32_t index, MarkerSummary* out) const {
 
 int32_t Core::getMarkerPose44(int32_t index, int outPtr) const {
   if (!outPtr) return ERROR_INVALID_ARGUMENT;
-  if (!arHandle_ || !ar3DHandle_) return ERROR_NOT_INITIALIZED;
-  if (index < 0 || index >= arHandle_->marker_num) return ERROR_MARKER_INDEX_OUT_OF_BOUNDS;
+  if (!this->arHandle || !this->ar3DHandle) return ERROR_NOT_INITIALIZED;
+  if (index < 0 || index >= this->arHandle->marker_num) return ERROR_MARKER_INDEX_OUT_OF_BOUNDS;
 
   auto* out16 = reinterpret_cast<float*>(static_cast<uintptr_t>(outPtr));
 
   ARdouble trans34[3][4];
-  ARMarkerInfo* marker = &arHandle_->markerInfo[index];
+  ARMarkerInfo* marker = &this->arHandle->markerInfo[index];
 
   const ARdouble markerWidth = 80.0;
-  arGetTransMatSquare(ar3DHandle_, marker, markerWidth, trans34);
+  arGetTransMatSquare(this->ar3DHandle, marker, markerWidth, trans34);
 
   transform34ToMat44_(trans34, out16);
   return ERROR_OK;
@@ -260,61 +282,61 @@ int32_t Core::addPatternFromBuffer(int pattPtr, int32_t pattLen) {
 }
 
 void Core::setMatrixCodeType(int32_t type) {
-  if (!arHandle_) return;
-  arSetMatrixCodeType(arHandle_, static_cast<AR_MATRIX_CODE_TYPE>(type));
+  if (!this->arHandle) return;
+  arSetMatrixCodeType(this->arHandle, static_cast<AR_MATRIX_CODE_TYPE>(type));
 }
 
 void Core::setThreshold(int32_t threshold) {
-  if (!arHandle_) return;
+  if (!this->arHandle) return;
   if (threshold < 0 || threshold > 255) return;
-  arSetLabelingThresh(arHandle_, threshold);
+  arSetLabelingThresh(this->arHandle, threshold);
 }
 
 int32_t Core::getThreshold() const {
-  if (!arHandle_) return ERROR_NOT_INITIALIZED;
+  if (!this->arHandle) return ERROR_NOT_INITIALIZED;
   int t = -1;
-  arGetLabelingThresh(arHandle_, &t);
+  arGetLabelingThresh(this->arHandle, &t);
   return t;
 }
 
 void Core::setThresholdMode(int32_t mode) {
-  if (!arHandle_) return;
-  arSetLabelingThreshMode(arHandle_, static_cast<AR_LABELING_THRESH_MODE>(mode));
+  if (!this->arHandle) return;
+  arSetLabelingThreshMode(this->arHandle, static_cast<AR_LABELING_THRESH_MODE>(mode));
 }
 
 int32_t Core::getThresholdMode() const {
-  if (!arHandle_) return ERROR_NOT_INITIALIZED;
+  if (!this->arHandle) return ERROR_NOT_INITIALIZED;
   AR_LABELING_THRESH_MODE m;
-  arGetLabelingThreshMode(arHandle_, &m);
+  arGetLabelingThreshMode(this->arHandle, &m);
   return static_cast<int32_t>(m);
 }
 
 void Core::setDebugMode(int32_t enable) {
-  if (!arHandle_) return;
-  arSetDebugMode(arHandle_, enable ? AR_DEBUG_ENABLE : AR_DEBUG_DISABLE);
+  if (!this->arHandle) return;
+  arSetDebugMode(this->arHandle, enable ? AR_DEBUG_ENABLE : AR_DEBUG_DISABLE);
 }
 
 int32_t Core::getDebugMode() const {
-  if (!arHandle_) return ERROR_NOT_INITIALIZED;
+  if (!this->arHandle) return ERROR_NOT_INITIALIZED;
   int enable = 0;
-  arGetDebugMode(arHandle_, &enable);
+  arGetDebugMode(this->arHandle, &enable);
   return enable;
 }
 
 void Core::setImageProcMode(int32_t mode) {
-  if (!arHandle_) return;
-  arSetImageProcMode(arHandle_, mode);
+  if (!this->arHandle) return;
+  arSetImageProcMode(this->arHandle, mode);
 }
 
 int32_t Core::getImageProcMode() const {
-  if (!arHandle_) return ERROR_NOT_INITIALIZED;
+  if (!this->arHandle) return ERROR_NOT_INITIALIZED;
   int mode = 0;
-  arGetImageProcMode(arHandle_, &mode);
+  arGetImageProcMode(this->arHandle, &mode);
   return mode;
 }
 
 void Core::destroyHandles_() {
-  if (arHandle_) {
+  /*if (arHandle_) {
     arPattDetach(arHandle_);
     arDeleteHandle(arHandle_);
     arHandle_ = nullptr;
@@ -326,6 +348,24 @@ void Core::destroyHandles_() {
   if (paramLT_) {
     arParamLTFree(&paramLT_);
     paramLT_ = nullptr;
+  }*/
+}
+
+void Core::deleteHandle() {
+  if (this->arHandle != nullptr) {
+    if (arPattDetach(this->arHandle) != 0) {
+      ARLOGe("Error detaching pattern from arhandle.");
+    }
+    arDeleteHandle(this->arHandle);
+    this->arHandle = nullptr;
+  }
+  if (this->ar3DHandle != nullptr) {
+    ar3DDeleteHandle(&(this->ar3DHandle));
+    this->ar3DHandle = nullptr;
+  }
+  if (this->paramLT != nullptr) {
+    arParamLTFree(&(this->paramLT));
+    this->paramLT = nullptr;
   }
 }
 

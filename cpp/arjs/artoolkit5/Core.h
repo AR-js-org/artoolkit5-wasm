@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <unordered_map>
 
 #include <AR/ar.h>
 #include <AR/paramGL.h>
@@ -11,6 +12,11 @@
 #include "Types.h"
 
 namespace arjs::artoolkit5 {
+
+static int gARControllerID = 0;
+static int gCameraID = 0;
+
+static std::unordered_map<int, ARParam> cameraParams;
 
 class Core {
 public:
@@ -22,7 +28,7 @@ public:
 
   // Allocates internal buffers and initializes core handles.
   // Returns 0 on success, <0 on error.
-  int32_t setup(int32_t width, int32_t height);
+  int32_t setup(int32_t width, int32_t height, int32_t cameraID);
 
   // Releases all resources.
   int32_t teardown();
@@ -34,7 +40,7 @@ public:
   // Optional legacy path (only if you mount FS and write files).
   int32_t loadCameraFromPath(const char* cparamPath);
 
-  int32_t setCamera(int32_t cameraId);
+  int32_t setCamera(int32_t id, int32_t cameraID);
 
   // Writes 16 floats (column-major) to out16 (must point to 16 floats).
   void getCameraLens(int outPtr) const;
@@ -68,8 +74,8 @@ public:
   int getFrameBufferRGBA() const;
   int getFrameBufferGRAY() const;
 
-  int32_t getFrameWidth() const { return width_; }
-  int32_t getFrameHeight() const { return height_; }
+  int32_t getFrameWidth() const { return this->width; }
+  int32_t getFrameHeight() const { return this->height; }
 
   // Detect markers using the current internal frame buffer for given format.
   int32_t detect(int fmt);
@@ -129,30 +135,35 @@ private:
   void destroyHandles_();
   int32_t ensureHandles_();
   void updateCameraLens_();
+  void deleteHandle();
 
   // Converts ARToolKit 3x4 transform to column-major 4x4 float matrix.
   static void transform34ToMat44_(const ARdouble src34[3][4], float* out16);
 
-  int32_t width_ = 0;
-  int32_t height_ = 0;
+  int32_t width = 0;
+  int32_t height = 0;
 
   std::vector<uint8_t> frameRGBA_;
   std::vector<uint8_t> frameGRAY_;
 
-  float nearPlane_ = 0.0001f;
-  float farPlane_ = 1000.0f;
+  float nearPlane = 0.0001f;
+  float farPlane = 1000.0f;
+
+  int id;
 
   // Camera store
   // NOTE: For simplicity we can keep a global camera store in .cpp (unordered_map cameraId->ARParam),
   // similar to the legacy code. Here we store only the active one.
-  ARParam param_{};
-  ARParamLT* paramLT_ = nullptr;
+   ARParam param;
+   ARParamLT *paramLT = nullptr;
 
-  ARHandle* arHandle_ = nullptr;
-  AR3DHandle* ar3DHandle_ = nullptr;
-  ARPattHandle* pattHandle_ = nullptr;
+	ARHandle *arHandle = nullptr;
+  AR3DHandle* ar3DHandle = nullptr;
+  ARPattHandle* pattHandle = nullptr;
 
-  float cameraLens_[16]{};
+  ARdouble cameraLens[16]{};
+
+  AR_PIXEL_FORMAT pixFormat = AR_PIXEL_FORMAT_RGBA;
 };
 
 } // namespace arjs::artoolkit5

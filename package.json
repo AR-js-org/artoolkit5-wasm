@@ -21,7 +21,7 @@
     "dist/artoolkit5.wasm"
   ],
   "scripts": {
-    "build:wasm": "echo \"run your emcmake/cmake build here\"",
+    "build:wasm": "node scripts/build-wasm-docker.mjs",
     "build:wrap": "vite build && tsc -p tsconfig.build.json",
     "build": "npm run build:wasm && npm run build:wrap"
   },
