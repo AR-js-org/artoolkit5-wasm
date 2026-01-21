@@ -269,6 +269,20 @@ int32_t Core::getMarkerCount() const {
   return this->arHandle->marker_num;
 }
 
+int32_t Core::getMarkerInfoRaw(int32_t index, ARMarkerInfo* out) const {
+    if (!out || !arHandle) return ERROR_INVALID_ARGUMENT_();
+    if (index >= arHandle->marker_num || index < 0) return ERROR_MARKER_INDEX_OUT_OF_BOUNDS_();
+    const ARMarkerInfo* src = &arHandle->markerInfo[index];
+    std::memcpy(out, src, sizeof(ARMarkerInfo));
+    return ERROR_OK_();
+}
+
+ARMarkerInfo Core::getMarkerInfo(int32_t index) const {
+    ARMarkerInfo out{};
+    getMarkerInfoRaw(index, &out);
+    return out;
+}
+
 int32_t Core::getMarkerSummary(int32_t index, MarkerSummary *out) const {
   if (!out)
     return ERROR_INVALID_ARGUMENT;
@@ -414,22 +428,6 @@ int32_t Core::getImageProcMode() const {
   int mode = 0;
   arGetImageProcMode(this->arHandle, &mode);
   return mode;
-}
-
-void Core::destroyHandles_() {
-  /*if (arHandle_) {
-    arPattDetach(arHandle_);
-    arDeleteHandle(arHandle_);
-    arHandle_ = nullptr;
-  }
-  if (ar3DHandle_) {
-    ar3DDeleteHandle(&ar3DHandle_);
-    ar3DHandle_ = nullptr;
-  }
-  if (paramLT_) {
-    arParamLTFree(&paramLT_);
-    paramLT_ = nullptr;
-  }*/
 }
 
 void Core::deleteHandle() {

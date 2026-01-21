@@ -1,12 +1,14 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
 #include <unordered_map>
+#include <vector>
+
 
 #include <AR/ar.h>
-#include <AR/paramGL.h>
 #include <AR/config.h>
+#include <AR/paramGL.h>
+
 
 #include "Errors.h"
 #include "Types.h"
@@ -23,8 +25,8 @@ public:
   Core();
   ~Core();
 
-  Core(const Core&) = delete;
-  Core& operator=(const Core&) = delete;
+  Core(const Core &) = delete;
+  Core &operator=(const Core &) = delete;
 
   // Allocates internal buffers and initializes core handles.
   // Returns 0 on success, <0 on error.
@@ -38,7 +40,7 @@ public:
   int32_t loadCameraFromBuffer(int dataPtr, int32_t len);
 
   // Optional legacy path (only if you mount FS and write files).
-  int32_t loadCameraFromPath(const char* cparamPath);
+  int32_t loadCameraFromPath(const char *cparamPath);
 
   int32_t setCamera(int32_t id, int32_t cameraID);
 
@@ -89,8 +91,10 @@ public:
   // ---- Results ----
   int32_t getMarkerCount() const;
 
+  ARMarkerInfo getMarkerInfo(int32_t index) const;
+
   // 0 on success; negative on error.
-  int32_t getMarkerSummary(int32_t index, MarkerSummary* out) const;
+  int32_t getMarkerSummary(int32_t index, MarkerSummary *out) const;
 
   // Writes 16 floats pose matrix (column-major) to out16.
   // 0 on success; negative on error.
@@ -135,18 +139,20 @@ public:
   static int32_t AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONFIDENCE_();
   static int32_t AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_();
   static int32_t AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_MULTI_();
-  static int32_t AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES_();
+  static int32_t
+  AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES_();
 
 private:
-  void destroyHandles_();
   int32_t ensureHandles_();
   void updateCameraLens_();
   void deleteHandle();
 
-  int32_t loadMarker(const char *patt_name, int *patt_id, ARHandle *arHandle, ARPattHandle **pattHandle_p);
+  int32_t loadMarker(const char *patt_name, int *patt_id, ARHandle *arHandle,
+                     ARPattHandle **pattHandle_p);
+  int32_t getMarkerInfoRaw(int32_t index, ARMarkerInfo *out) const;
 
   // Converts ARToolKit 3x4 transform to column-major 4x4 float matrix.
-  static void transform34ToMat44_(const ARdouble src34[3][4], float* out16);
+  static void transform34ToMat44_(const ARdouble src34[3][4], float *out16);
 
   int32_t width = 0;
   int32_t height = 0;
@@ -157,8 +163,8 @@ private:
   std::vector<uint8_t> frameGRAY_;
 
   // External pointers (WASM heap) for zero-copy frames.
-  uint8_t* frameRGBAPtr_ = nullptr;
-  uint8_t* frameGRAYPtr_ = nullptr;
+  uint8_t *frameRGBAPtr_ = nullptr;
+  uint8_t *frameGRAYPtr_ = nullptr;
   int32_t frameRGBABytes_ = 0;
   int32_t frameGRAYBytes_ = 0;
 
@@ -168,14 +174,15 @@ private:
   int id;
 
   // Camera store
-  // NOTE: For simplicity we can keep a global camera store in .cpp (unordered_map cameraId->ARParam),
-  // similar to the legacy code. Here we store only the active one.
-   ARParam param;
-   ARParamLT *paramLT = nullptr;
+  // NOTE: For simplicity we can keep a global camera store in .cpp
+  // (unordered_map cameraId->ARParam), similar to the legacy code. Here we
+  // store only the active one.
+  ARParam param;
+  ARParamLT *paramLT = nullptr;
 
-	ARHandle *arHandle = nullptr;
-  AR3DHandle* ar3DHandle = nullptr;
-  ARPattHandle* pattHandle = nullptr;
+  ARHandle *arHandle = nullptr;
+  AR3DHandle *ar3DHandle = nullptr;
+  ARPattHandle *pattHandle = nullptr;
 
   int patt_id = 0;
 
