@@ -1,3 +1,22 @@
+dictionary ARMarkerInfo {
+  long area;
+  long id;
+  long idPatt;
+  long idMatrix;
+  long dir;
+  long dirPatt;
+  long dirMatrix;
+  double cf;
+  double cfPatt;
+  double cfMatrix;
+  sequence<double> pos;     // length 2
+  sequence<double> line;    // length 12
+  sequence<double> vertex;  // length 8
+  long errorCorrected;
+  unsigned long long globalID;
+  long cutoffPhase;
+};
+
 interface ARToolKitCore {
   void ARToolKitCore();
    // ---- ARToolKit constants ----
@@ -53,6 +72,7 @@ interface ARToolKitCore {
   // ---- markers ----
   long addMarker(DOMString pattName);
   long addPatternFromBuffer(long pattPtr, long pattLen); // TODO in C++: implement via MEMFS or memory loader
+  ARMarkerInfo getMarkerInfo(long index);
   void setMatrixCodeType(long type);
 
   // ---- config ----
