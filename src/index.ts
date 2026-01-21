@@ -1,5 +1,6 @@
 // src/index.ts
 import createEmscriptenModule from "../dist/artoolkit5.js";
+import { loadCameraFromUrl, addMarkerFromUrl } from './loader.js';
 
 export type LocateFile = (path: string, prefix: string) => string;
 
@@ -41,3 +42,5 @@ export async function createARToolKit(opts: CreateARToolKitOptions = {}) {
 
 export type ARToolKitInstance = Awaited<ReturnType<typeof createARToolKit>>;
 export type ARToolKitConstants = ARToolKitInstance["constants"];
+
+export { loadCameraFromUrl, addMarkerFromUrl };

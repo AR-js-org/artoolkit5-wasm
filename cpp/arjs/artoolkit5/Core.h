@@ -20,6 +20,8 @@ static int gCameraID = 0;
 
 static std::unordered_map<int, ARParam> cameraParams;
 
+static ARMarkerInfo gMarkerInfo;
+
 class Core {
 public:
   Core();
@@ -89,9 +91,11 @@ public:
   int32_t setFrameGRAY(int dataPtr, int32_t len);
 
   // ---- Results ----
-  int32_t getMarkerCount() const;
+  int32_t getMarkerNum() const;
 
   ARMarkerInfo getMarkerInfo(int32_t index) const;
+
+  int32_t setMarkerInfoDir(int markerIndex, int dir) const;
 
   // 0 on success; negative on error.
   int32_t getMarkerSummary(int32_t index, MarkerSummary *out) const;

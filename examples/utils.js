@@ -1,10 +1,3 @@
-// examples/utils.js
-/*export async function fetchBinary(url) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Failed fetch ${url}: ${res.status}`);
-    return new Uint8Array(await res.arrayBuffer());
-}*/
-
 export async function fetchBinary(url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`fetch failed ${res.status} ${res.statusText}: ${url}`);
