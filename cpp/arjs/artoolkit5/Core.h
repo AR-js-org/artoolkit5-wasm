@@ -4,11 +4,9 @@
 #include <unordered_map>
 #include <vector>
 
-
 #include <AR/ar.h>
 #include <AR/config.h>
 #include <AR/paramGL.h>
-
 
 #include "Errors.h"
 #include "Types.h"
@@ -21,6 +19,8 @@ static int gCameraID = 0;
 static std::unordered_map<int, ARParam> cameraParams;
 
 static ARMarkerInfo gMarkerInfo;
+
+static ARdouble gTransform[3][4];
 
 class Core {
 public:
@@ -103,6 +103,9 @@ public:
   // Writes 16 floats pose matrix (column-major) to out16.
   // 0 on success; negative on error.
   int32_t getMarkerPose44(int32_t index, int outPtr) const;
+
+  int32_t getTransMatSquareCont(int markerIndex, int markerWidth) const;
+  int32_t getTransMatSquare(int markerIndex, int markerWidth) const;
 
   // ---- ARToolKit constants (from <AR/ar.h> etc.) ----
   static int32_t ERROR_OK_();

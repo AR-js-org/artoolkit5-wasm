@@ -238,27 +238,31 @@ int32_t Core::detectMarker() {
   buff.fillFlag = 1;
 
   // Prefer external pointers; fall back to internal buffers.
-  uint8_t* rgba = frameRGBAPtr_ ? frameRGBAPtr_ :
-                  (frameRGBA_.empty() ? nullptr : frameRGBA_.data());
-  uint8_t* gray = frameGRAYPtr_ ? frameGRAYPtr_ :
-                  (frameGRAY_.empty() ? nullptr : frameGRAY_.data());
+  uint8_t *rgba = frameRGBAPtr_
+                      ? frameRGBAPtr_
+                      : (frameRGBA_.empty() ? nullptr : frameRGBA_.data());
+  uint8_t *gray = frameGRAYPtr_
+                      ? frameGRAYPtr_
+                      : (frameGRAY_.empty() ? nullptr : frameGRAY_.data());
 
-  buff.buff = rgba;        // RGBA
-  buff.buffLuma = gray;    // Luma (GRAY)
+  buff.buff = rgba;     // RGBA
+  buff.buffLuma = gray; // Luma (GRAY)
 
   return arDetectMarker(this->arHandle, &buff);
 }
 
 int32_t Core::setFrameRGBA(int dataPtr, int32_t len) {
-  if (!dataPtr || len <= 0) return ERROR_INVALID_ARGUMENT;
-  frameRGBAPtr_ = reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(dataPtr));
+  if (!dataPtr || len <= 0)
+    return ERROR_INVALID_ARGUMENT;
+  frameRGBAPtr_ = reinterpret_cast<uint8_t *>(static_cast<uintptr_t>(dataPtr));
   frameRGBABytes_ = len;
   return ERROR_OK;
 }
 
 int32_t Core::setFrameGRAY(int dataPtr, int32_t len) {
-  if (!dataPtr || len <= 0) return ERROR_INVALID_ARGUMENT;
-  frameGRAYPtr_ = reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(dataPtr));
+  if (!dataPtr || len <= 0)
+    return ERROR_INVALID_ARGUMENT;
+  frameGRAYPtr_ = reinterpret_cast<uint8_t *>(static_cast<uintptr_t>(dataPtr));
   frameGRAYBytes_ = len;
   return ERROR_OK;
 }
@@ -269,29 +273,33 @@ int32_t Core::getMarkerNum() const {
   return this->arHandle->marker_num;
 }
 
-int32_t Core::getMarkerInfoRaw(int32_t index, ARMarkerInfo* out) const {
-    if (!out || !arHandle) return ERROR_INVALID_ARGUMENT_();
-    if (index >= arHandle->marker_num || index < 0) return ERROR_MARKER_INDEX_OUT_OF_BOUNDS_();
-    const ARMarkerInfo* src = &arHandle->markerInfo[index];
-    std::memcpy(out, src, sizeof(ARMarkerInfo));
-    return ERROR_OK_();
+int32_t Core::getMarkerInfoRaw(int32_t index, ARMarkerInfo *out) const {
+  if (!out || !arHandle)
+    return ERROR_INVALID_ARGUMENT_();
+  if (index >= arHandle->marker_num || index < 0)
+    return ERROR_MARKER_INDEX_OUT_OF_BOUNDS_();
+  const ARMarkerInfo *src = &arHandle->markerInfo[index];
+  std::memcpy(out, src, sizeof(ARMarkerInfo));
+  return ERROR_OK_();
 }
 
 ARMarkerInfo Core::getMarkerInfo(int32_t index) const {
-    ARMarkerInfo out{};
-    getMarkerInfoRaw(index, &out);
-    return out;
+  ARMarkerInfo out{};
+  getMarkerInfoRaw(index, &out);
+  return out;
 }
 
 int32_t Core::setMarkerInfoDir(int markerIndex, int dir) const {
   if (this->arHandle->marker_num <= markerIndex) {
-			return ERROR_MARKER_INDEX_OUT_OF_BOUNDS;
-		}
-		ARMarkerInfo* marker = markerIndex < 0 ? &gMarkerInfo : &((this->arHandle)->markerInfo[markerIndex]);
+    return ERROR_MARKER_INDEX_OUT_OF_BOUNDS;
+  }
+  ARMarkerInfo *marker = markerIndex < 0
+                             ? &gMarkerInfo
+                             : &((this->arHandle)->markerInfo[markerIndex]);
 
-		marker->dir = dir;
+  marker->dir = dir;
 
-		return 0;
+  return 0;
 }
 
 int32_t Core::getMarkerSummary(int32_t index, MarkerSummary *out) const {
@@ -368,6 +376,33 @@ void Core::transform34ToMat44_(const ARdouble src34[3][4], float *out16) {
   out16[13] = static_cast<float>(src34[1][3]);
   out16[14] = static_cast<float>(src34[2][3]);
   out16[15] = 1.0f;
+}
+
+int32_t Core::getTransMatSquareCont(int markerIndex, int markerWidth) const {
+  if (this->arHandle->marker_num <= markerIndex) {
+    return ERROR_MARKER_INDEX_OUT_OF_BOUNDS;
+  }
+  ARMarkerInfo *marker = markerIndex < 0
+                             ? &gMarkerInfo
+                             : &((this->arHandle)->markerInfo[markerIndex]);
+
+  arGetTransMatSquareCont(this->ar3DHandle, marker, gTransform, markerWidth,
+                          gTransform);
+
+  return 0;
+}
+
+int32_t Core::getTransMatSquare(int markerIndex, int markerWidth) const {
+  if (this->arHandle->marker_num <= markerIndex) {
+    return ERROR_MARKER_INDEX_OUT_OF_BOUNDS;
+  }
+  ARMarkerInfo *marker = markerIndex < 0
+                             ? &gMarkerInfo
+                             : &((this->arHandle)->markerInfo[markerIndex]);
+
+  arGetTransMatSquare(this->ar3DHandle, marker, markerWidth, gTransform);
+
+  return 0;
 }
 
 int32_t Core::addPatternFromBuffer(int pattPtr, int32_t pattLen) {

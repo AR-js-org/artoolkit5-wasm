@@ -111,4 +111,6 @@ interface ARToolKitCore {
   //long getMarkerId(long index);
   //float getMarkerConfidence(long index);
   long getMarkerPose44(long index, long outPtr); // writes 16 floats
+  long getTransMatSquareCont(long markerIndex, long markerWidth);
+  long getTransMatSquare(long markerIndex, long markerWidth);
 };
