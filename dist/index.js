@@ -1,9 +1,31 @@
-import L from "../dist/artoolkit5.js";
-async function N(R = {}) {
-  const E = await L({
-    locateFile: R.locateFile,
-    wasmBinary: R.wasmBinary
-  }), _ = new E.ARToolKitCore(), O = Object.freeze({
+import e from "../dist/artoolkit5.js";
+async function t(E) {
+  const R = await fetch(E);
+  if (!R.ok) throw new Error(`fetch failed ${R.status} ${R.statusText}: ${E}`);
+  return new Uint8Array(await R.arrayBuffer());
+}
+function O(E, R) {
+  const _ = R.substring(0, R.lastIndexOf("/")) || "/";
+  if (_ !== "/")
+    try {
+      E.mkdir(_);
+    } catch (a) {
+      if (a.code !== "EEXIST") throw a;
+    }
+}
+async function n(E, R, _, a = "/data/camera_para.dat") {
+  const r = await t(_);
+  return O(E.FS, a), E.FS.writeFile(a, r), R.loadCameraFromPath(a);
+}
+async function o(E, R, _, a = "/data/patt.hiro") {
+  const r = await t(_);
+  return O(E.FS, a), E.FS.writeFile(a, r), R.addMarker(a);
+}
+async function i(E = {}) {
+  const R = await e({
+    locateFile: E.locateFile,
+    wasmBinary: E.wasmBinary
+  }), _ = new R.ARToolKitCore(), a = Object.freeze({
     ERROR_OK: _.ERROR_OK_(),
     ERROR_NOT_INITIALIZED: _.ERROR_NOT_INITIALIZED_(),
     ERROR_INVALID_ARGUMENT: _.ERROR_INVALID_ARGUMENT_(),
@@ -18,9 +40,11 @@ async function N(R = {}) {
     AR_LOG_LEVEL_REL_INFO: _.AR_LOG_LEVEL_REL_INFO_()
     // ... (tutte le altre che ti servono)
   });
-  return { mod: E, core: _, constants: O };
+  return { mod: R, core: _, constants: a };
 }
 export {
-  N as createARToolKit
+  o as addMarkerFromUrl,
+  i as createARToolKit,
+  n as loadCameraFromUrl
 };
 //# sourceMappingURL=index.js.map

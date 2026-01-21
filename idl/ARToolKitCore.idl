@@ -73,6 +73,7 @@ interface ARToolKitCore {
   long addMarker(DOMString pattName);
   long addPatternFromBuffer(long pattPtr, long pattLen); // TODO in C++: implement via MEMFS or memory loader
   ARMarkerInfo getMarkerInfo(long index);
+  long setMarkerInfoDir(long markerIndex, long dir);
   void setMatrixCodeType(long type);
 
   // ---- config ----
@@ -102,7 +103,7 @@ interface ARToolKitCore {
   long detectMarker();
 
   // ---- results ----
-  long getMarkerCount();
+  long getMarkerNum();
 
   // MarkerSummary via out-buffer would be ideal, but WebIDL binder doesn't do structs well.
   // We expose primitive getters.

@@ -1,3 +1,4 @@
+import { loadCameraFromUrl, addMarkerFromUrl } from './loader.js';
 export type LocateFile = (path: string, prefix: string) => string;
 export interface CreateARToolKitOptions {
     locateFile?: LocateFile;
@@ -23,4 +24,5 @@ export declare function createARToolKit(opts?: CreateARToolKitOptions): Promise<
 }>;
 export type ARToolKitInstance = Awaited<ReturnType<typeof createARToolKit>>;
 export type ARToolKitConstants = ARToolKitInstance["constants"];
+export { loadCameraFromUrl, addMarkerFromUrl };
 //# sourceMappingURL=index.d.ts.map

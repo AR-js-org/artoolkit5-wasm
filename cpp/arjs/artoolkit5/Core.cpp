@@ -263,7 +263,7 @@ int32_t Core::setFrameGRAY(int dataPtr, int32_t len) {
   return ERROR_OK;
 }
 
-int32_t Core::getMarkerCount() const {
+int32_t Core::getMarkerNum() const {
   if (!this->arHandle)
     return 0;
   return this->arHandle->marker_num;
@@ -281,6 +281,17 @@ ARMarkerInfo Core::getMarkerInfo(int32_t index) const {
     ARMarkerInfo out{};
     getMarkerInfoRaw(index, &out);
     return out;
+}
+
+int32_t Core::setMarkerInfoDir(int markerIndex, int dir) const {
+  if (this->arHandle->marker_num <= markerIndex) {
+			return ERROR_MARKER_INDEX_OUT_OF_BOUNDS;
+		}
+		ARMarkerInfo* marker = markerIndex < 0 ? &gMarkerInfo : &((this->arHandle)->markerInfo[markerIndex]);
+
+		marker->dir = dir;
+
+		return 0;
 }
 
 int32_t Core::getMarkerSummary(int32_t index, MarkerSummary *out) const {
