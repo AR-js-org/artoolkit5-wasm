@@ -42,7 +42,7 @@ public:
 
   int32_t setCamera(int32_t id, int32_t cameraID);
 
-  int32_t loadMarker(const char *patt_name, int patt_id_ptr, int pattHandle_ptr);
+  int32_t addMarker(const char *patt_name);
 
   // Writes 16 floats (column-major) to out16 (must point to 16 floats).
   void getCameraLens(int outPtr) const;
@@ -80,7 +80,11 @@ public:
   int32_t getFrameHeight() const { return this->height; }
 
   // Detect markers using the current internal frame buffer for given format.
-  int32_t detect(int fmt);
+  int32_t detectMarker();
+
+  // ---- direct frame pointers (WASM memory) ----
+  int32_t setFrameRGBA(int dataPtr, int32_t len);
+  int32_t setFrameGRAY(int dataPtr, int32_t len);
 
   // ---- Results ----
   int32_t getMarkerCount() const;
@@ -139,6 +143,8 @@ private:
   void updateCameraLens_();
   void deleteHandle();
 
+  int32_t loadMarker(const char *patt_name, int *patt_id, ARHandle *arHandle, ARPattHandle **pattHandle_p);
+
   // Converts ARToolKit 3x4 transform to column-major 4x4 float matrix.
   static void transform34ToMat44_(const ARdouble src34[3][4], float* out16);
 
@@ -149,6 +155,12 @@ private:
 
   std::vector<uint8_t> frameRGBA_;
   std::vector<uint8_t> frameGRAY_;
+
+  // External pointers (WASM heap) for zero-copy frames.
+  uint8_t* frameRGBAPtr_ = nullptr;
+  uint8_t* frameGRAYPtr_ = nullptr;
+  int32_t frameRGBABytes_ = 0;
+  int32_t frameGRAYBytes_ = 0;
 
   float nearPlane = 0.0001f;
   float farPlane = 1000.0f;
@@ -164,6 +176,8 @@ private:
 	ARHandle *arHandle = nullptr;
   AR3DHandle* ar3DHandle = nullptr;
   ARPattHandle* pattHandle = nullptr;
+
+  int patt_id = 0;
 
   ARdouble cameraLens[16]{};
 

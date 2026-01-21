@@ -26,3 +26,15 @@ export async function loadCameraFromUrl(mod, core, url) {
 
     return core.loadCameraFromPath(vpath);
 }
+
+export async function addMarker(mod, core, markerUrl) {
+    const data = await fetchBinary(markerUrl);
+
+    // Crea directory in MEMFS (se non esiste)
+    try { mod.FS.mkdir("/data"); } catch (e) { /* EEXIST ok */ }
+
+    const vpath = "/data/patt.hiro";
+    mod.FS.writeFile(vpath, data); // encoding binary implicito con Uint8Array
+
+    return core.addMarker(vpath);
+}

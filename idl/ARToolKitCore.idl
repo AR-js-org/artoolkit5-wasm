@@ -51,7 +51,7 @@ interface ARToolKitCore {
   void getCameraLens(long outPtr); // writes 16 floats
 
   // ---- markers ----
-  long loadMarker(DOMString pattName, long pattidPtr, long pattHandlePtr);
+  long addMarker(DOMString pattName);
   long addPatternFromBuffer(long pattPtr, long pattLen); // TODO in C++: implement via MEMFS or memory loader
   void setMatrixCodeType(long type);
 
@@ -74,10 +74,12 @@ interface ARToolKitCore {
   long getFrameBufferGRAY();
   long getFrameWidth();
   long getFrameHeight();
+  long setFrameRGBA(long dataPtr, long dataLen);
+  long setFrameGRAY(long dataPtr, long dataLen);
 
   // ---- detect ----
   // 0=RGBA8, 1=GRAY8
-  long detect(long pixelFormat);
+  long detectMarker();
 
   // ---- results ----
   long getMarkerCount();
