@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./loader": {
+      "types": "./dist/loader.d.ts",
+      "import": "./dist/loader.js"
     }
   },
   "files": [
@@ -18,7 +22,10 @@
     "dist/index.d.ts",
     "dist/index.d.ts.map",
     "dist/artoolkit5.js",
-    "dist/artoolkit5.wasm"
+    "dist/artoolkit5.wasm",
+    "dist/loader.js",
+    "dist/loader.js.map",
+    "dist/loader.d.ts"
   ],
   "scripts": {
     "build:wasm": "node scripts/build-wasm-docker.mjs",
