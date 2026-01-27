@@ -240,15 +240,15 @@ int32_t Core::detectMarker() {
   buff.fillFlag = 1;
 
   // Prefer external pointers; fall back to internal buffers.
-  uint8_t *rgba = frameRGBAPtr_
+  /*uint8_t *rgba = frameRGBAPtr_
                       ? frameRGBAPtr_
                       : (frameRGBA_.empty() ? nullptr : frameRGBA_.data());
   uint8_t *gray = frameGRAYPtr_
                       ? frameGRAYPtr_
-                      : (frameGRAY_.empty() ? nullptr : frameGRAY_.data());
+                      : (frameGRAY_.empty() ? nullptr : frameGRAY_.data());*/
 
-  buff.buff = rgba;     // RGBA
-  buff.buffLuma = gray; // Luma (GRAY)
+  buff.buff = this->frameRGBAPtr_;     // RGBA
+  buff.buffLuma = this->frameGRAYPtr_; // Luma (GRAY)
 
   return arDetectMarker(this->arHandle, &buff);
 }
