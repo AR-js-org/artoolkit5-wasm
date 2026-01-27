@@ -170,8 +170,8 @@ private:
   std::vector<uint8_t> frameGRAY_;
 
   // External pointers (WASM heap) for zero-copy frames.
-  uint8_t *frameRGBAPtr_ = nullptr;
-  uint8_t *frameGRAYPtr_ = nullptr;
+  ARUint8 *frameRGBAPtr_ = nullptr;
+  ARUint8 *frameGRAYPtr_ = nullptr;
   int32_t frameRGBABytes_ = 0;
   int32_t frameGRAYBytes_ = 0;
 
