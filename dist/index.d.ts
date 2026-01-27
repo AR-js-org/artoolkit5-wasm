@@ -20,6 +20,9 @@ export declare function createARToolKit(opts?: CreateARToolKitOptions): Promise<
         readonly AR_LOG_LEVEL_WARN: any;
         readonly AR_LOG_LEVEL_ERROR: any;
         readonly AR_LOG_LEVEL_REL_INFO: any;
+        readonly UNKNOWN_MARKER: -1;
+        readonly PATTERN_MARKER: 0;
+        readonly BARCODE_MARKER: 1;
     }>;
 }>;
 export type ARToolKitInstance = Awaited<ReturnType<typeof createARToolKit>>;

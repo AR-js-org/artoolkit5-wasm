@@ -231,8 +231,8 @@ int Core::getFrameBufferGRAY() const {
 }
 
 int32_t Core::detectMarker() {
-  if (!this->arHandle)
-    return ERROR_NOT_INITIALIZED;
+  /*if (!this->arHandle)
+    return ERROR_NOT_INITIALIZED;*/
 
   AR2VideoBufferT buff{};
   buff.fillFlag = 1;
@@ -268,8 +268,8 @@ int32_t Core::setFrameGRAY(int dataPtr, int32_t len) {
 }
 
 int32_t Core::getMarkerNum() const {
-  if (!this->arHandle)
-    return 0;
+  /*if (!this->arHandle)
+    return 0;*/
   return this->arHandle->marker_num;
 }
 
