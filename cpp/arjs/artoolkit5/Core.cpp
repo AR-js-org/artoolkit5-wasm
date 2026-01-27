@@ -33,9 +33,11 @@ int32_t Core::setup(int32_t width, int32_t height, int32_t cameraID) {
   frameGRAY_.resize(static_cast<size_t>(this->width) *
                     static_cast<size_t>(this->height));
 
-  frameRGBAPtr_ = frameRGBA_.empty() ? nullptr : frameRGBA_.data();
+  //frameRGBAPtr_ = frameRGBA_.empty() ? nullptr : frameRGBA_.data();
+  this->frameRGBAPtr_ = (ARUint8*) malloc(this->videoFrameSize);
   frameRGBABytes_ = static_cast<int32_t>(frameRGBA_.size());
-  frameGRAYPtr_ = frameGRAY_.empty() ? nullptr : frameGRAY_.data();
+  //frameGRAYPtr_ = frameGRAY_.empty() ? nullptr : frameGRAY_.data();
+  this->frameGRAYPtr_ = (ARUint8*) malloc(this->width * this->height);
   frameGRAYBytes_ = static_cast<int32_t>(frameGRAY_.size());
 
   if ((this->pattHandle = arPattCreateHandle()) == nullptr) {
@@ -254,7 +256,7 @@ int32_t Core::detectMarker() {
 int32_t Core::setFrameRGBA(int dataPtr, int32_t len) {
   if (!dataPtr || len <= 0)
     return ERROR_INVALID_ARGUMENT;
-  frameRGBAPtr_ = reinterpret_cast<uint8_t *>(static_cast<uintptr_t>(dataPtr));
+  frameRGBAPtr_ = reinterpret_cast<ARUint8 *>(static_cast<uintptr_t>(dataPtr));
   frameRGBABytes_ = len;
   return ERROR_OK;
 }
@@ -262,7 +264,7 @@ int32_t Core::setFrameRGBA(int dataPtr, int32_t len) {
 int32_t Core::setFrameGRAY(int dataPtr, int32_t len) {
   if (!dataPtr || len <= 0)
     return ERROR_INVALID_ARGUMENT;
-  frameGRAYPtr_ = reinterpret_cast<uint8_t *>(static_cast<uintptr_t>(dataPtr));
+  frameGRAYPtr_ = reinterpret_cast<ARUint8 *>(static_cast<uintptr_t>(dataPtr));
   frameGRAYBytes_ = len;
   return ERROR_OK;
 }
