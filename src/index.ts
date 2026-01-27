@@ -17,6 +17,10 @@ export async function createARToolKit(opts: CreateARToolKitOptions = {}) {
 
     const core = new mod.ARToolKitCore();
 
+    const UNKNOWN_MARKER = -1;
+    const PATTERN_MARKER = 0;
+    const BARCODE_MARKER = 1;
+
     // “freeze” per evitare mutazioni accidentali.
     const constants = Object.freeze({
         ERROR_OK: core.ERROR_OK_(),
@@ -33,6 +37,10 @@ export async function createARToolKit(opts: CreateARToolKitOptions = {}) {
         AR_LOG_LEVEL_WARN: core.AR_LOG_LEVEL_WARN_(),
         AR_LOG_LEVEL_ERROR: core.AR_LOG_LEVEL_ERROR_(),
         AR_LOG_LEVEL_REL_INFO: core.AR_LOG_LEVEL_REL_INFO_(),
+
+        UNKNOWN_MARKER,
+        PATTERN_MARKER,
+        BARCODE_MARKER, 
 
         // ... (tutte le altre che ti servono)
     } as const);
