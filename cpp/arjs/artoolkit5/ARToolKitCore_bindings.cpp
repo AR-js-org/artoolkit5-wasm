@@ -19,6 +19,7 @@ EMSCRIPTEN_BINDINGS(ARToolKitCore_bindings) {
       .function("setup", &ARToolKitCore::setup)
       .function("addMarker", &ARToolKitCore::addMarker)
       //.function("setFiltering", &ARToolKitCore::setFiltering)
+      .function("setMarkerInfoVertex", &ARToolKitCore::setMarkerInfoVertex)
       .function("getCameraLens", &ARToolKitCore::getCameraLens)
       .function("recalculateCameraLens", &ARToolKitCore::recalculateCameraLens)
       .function("passVideoData", &ARToolKitCore::passVideoData)
@@ -47,7 +48,8 @@ EMSCRIPTEN_BINDINGS(ARToolKitCore_bindings) {
       .function("getProcessingImage", &ARToolKitCore::getProcessingImage)
 
        .function("getTransMatSquare", &ARToolKitCore::getTransMatSquare)
-       .function("getTransMatSquareCont", &ARToolKitCore::getTransMatSquareCont);
+       .function("getTransMatSquareCont", &ARToolKitCore::getTransMatSquareCont)
+        .function("getTransform", &ARToolKitCore::getTransform);
 
   /* errors */
   constant("ERROR_MARKER_INDEX_OUT_OF_BOUNDS", arjs::artoolkit5::MARKER_INDEX_OUT_OF_BOUNDS);
