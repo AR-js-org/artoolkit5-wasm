@@ -74,10 +74,12 @@ namespace arjs
             int getTransMatSquare(int markerIndex, int markerWidth);
             int getTransMatSquareCont(int markerIndex, int markerWidth);
             int setMarkerInfoDir(int markerIndex, int dir);
+            int setMarkerInfoVertex(int markerIndex);
 
             int detectMarker();
             int getMarkerNum();
             emscripten::val getMarkerInfo( int markerIndex);
+            std::intptr_t getTransform();
 
             int setup(int width, int height, int cameraID);
 

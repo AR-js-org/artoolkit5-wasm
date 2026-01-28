@@ -5,6 +5,7 @@
 #include "ARToolKitCore.h"
 #include <iostream>
 #include <unordered_map>
+#include <cstdint>
 
 namespace arjs
 {
@@ -342,6 +343,30 @@ namespace arjs
             return 0;
         }
 
+        int ARToolKitCore::setMarkerInfoVertex(int markerIndex) {
+
+            if (this->arhandle->marker_num <= markerIndex) {
+                return MARKER_INDEX_OUT_OF_BOUNDS;
+            }
+            ARMarkerInfo* marker = markerIndex < 0 ? &gMarkerInfo : &((this->arhandle)->markerInfo[markerIndex]);
+
+            auto v = marker->vertex;
+
+            v[0][0] = gTransform[0][0];
+            v[0][1] = gTransform[0][1];
+            v[1][0] = gTransform[0][2];
+            v[1][1] = gTransform[0][3];
+            v[2][0] = gTransform[1][0];
+            v[2][1] = gTransform[1][1];
+            v[3][0] = gTransform[1][2];
+            v[3][1] = gTransform[1][3];
+
+            marker->pos[0] = (v[0][0] + v[1][0] + v[2][0] + v[3][0]) * 0.25;
+            marker->pos[1] = (v[0][1] + v[1][1] + v[2][1] + v[3][1]) * 0.25;
+
+            return 0;
+        }
+
         int ARToolKitCore::detectMarker() {
 
             // Convert video frame to AR2VideoBufferT
@@ -398,6 +423,11 @@ namespace arjs
             info.set("vertex", vertex);
 
             return info;
+        }
+
+        std::intptr_t ARToolKitCore::getTransform()
+        {
+            return reinterpret_cast<std::intptr_t>(gTransform);
         }
 
 

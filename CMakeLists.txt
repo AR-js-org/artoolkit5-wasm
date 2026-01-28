@@ -10,6 +10,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(DIST_DIR "${CMAKE_SOURCE_DIR}/dist")
 file(MAKE_DIRECTORY "${DIST_DIR}")
 
+option(ENABLE_WASM_DEBUG_FLAGS "Enable Emscripten debug flags" OFF)
+
 # ---- Wrapper sources (your code) ----
 set(WRAPPER_SOURCES
         cpp/arjs/artoolkit5/Core.cpp
@@ -254,3 +256,21 @@ set_target_properties(artoolkit5-embind PROPERTIES
 message(STATUS "Output: ${DIST_DIR}")
 message(STATUS "WebARKitLib: ${WEBARKITLIB_DIR}")
 message(STATUS "Sources matched: AR=${WEBARKIT_AR_SOURCES_COUNT}, ARICP=${WEBARKIT_ARICP_SOURCES_COUNT}, ARUtil=${WEBARKIT_ARUTIL_SOURCES_COUNT}, Video=${WEBARKIT_VIDEO_SOURCES_COUNT}")
+
+if (ENABLE_WASM_DEBUG_FLAGS)
+    message(STATUS "Enabling WASM debug flags: -g2 -s ASSERTIONS=1 --profiling")
+
+    target_compile_options(artoolkit5 PRIVATE -g2)
+    target_link_options(artoolkit5 PRIVATE
+            -g2
+            "SHELL:-s ASSERTIONS=1"
+            "SHELL:--profiling"
+    )
+
+    target_compile_options(artoolkit5-embind PRIVATE -g2)
+    target_link_options(artoolkit5-embind PRIVATE
+            -g2
+            "SHELL:-s ASSERTIONS=1"
+            "SHELL:--profiling"
+    )
+endif ()
