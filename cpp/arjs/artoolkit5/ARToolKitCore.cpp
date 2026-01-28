@@ -103,10 +103,12 @@ namespace arjs
 
             deleteHandle();
 
+            arPattDeleteHandle(this->arPattHandle);
+
             return 0;
         }
 
-        int ARToolKitCore::setCamera(int id, int cameraID) {
+        int ARToolKitCore::setCamera(int cameraID) {
 
             if (cameraParams.find(cameraID) == cameraParams.end()) {
                 return -1;
@@ -150,6 +152,9 @@ namespace arjs
                 webarkitLOGe("setCamera(): Error creating 3D handle");
                 return -1;
             }
+
+            arPattAttach(this->arhandle, this->arPattHandle);
+            ARLOGi("setCamera(): Pattern handler attached.\n");
 
             arglCameraFrustumRH(&((this->paramLT)->param), this->nearPlane,
                                 this->farPlane, this->cameraLens);
@@ -301,7 +306,7 @@ namespace arjs
             return -1;
         }
 
-        int ARToolKitCore::getTransMatSquare(int id, int markerIndex, int markerWidth) {
+        int ARToolKitCore::getTransMatSquare(int markerIndex, int markerWidth) {
 
             if (this->arhandle->marker_num <= markerIndex) {
                 return MARKER_INDEX_OUT_OF_BOUNDS;
@@ -313,7 +318,7 @@ namespace arjs
             return 0;
         }
 
-        int ARToolKitCore::getTransMatSquareCont(int id, int markerIndex, int markerWidth) {
+        int ARToolKitCore::getTransMatSquareCont(int markerIndex, int markerWidth) {
 
             if (this->arhandle->marker_num <= markerIndex) {
                 return MARKER_INDEX_OUT_OF_BOUNDS;
@@ -325,7 +330,7 @@ namespace arjs
             return 0;
         }
 
-        int ARToolKitCore::setMarkerInfoDir(int id, int markerIndex, int dir) {
+        int ARToolKitCore::setMarkerInfoDir(int markerIndex, int dir) {
 
             if (this->arhandle->marker_num <= markerIndex) {
                 return MARKER_INDEX_OUT_OF_BOUNDS;
@@ -337,7 +342,7 @@ namespace arjs
             return 0;
         }
 
-        int ARToolKitCore::detectMarker(int id) {
+        int ARToolKitCore::detectMarker() {
 
             // Convert video frame to AR2VideoBufferT
             AR2VideoBufferT buff = {0};
@@ -350,8 +355,7 @@ namespace arjs
         }
 
 
-        int ARToolKitCore::getMarkerNum(int id) {
-
+        int ARToolKitCore::getMarkerNum() {
             return this->arhandle->marker_num;
         }
 
@@ -377,7 +381,11 @@ namespace arjs
             this->videoFrame = std::unique_ptr<ARUint8[]>(new ARUint8[this->videoFrameSize]);
             this->videoLuma = std::unique_ptr<ARUint8[]>(new ARUint8[this->width * this->height]);
 
-            setCamera(id, cameraID);
+            if ((this->arPattHandle = arPattCreateHandle()) == NULL) {
+                ARLOGe("setup(): Error: arPattCreateHandle.\n");
+            }
+
+            setCamera(cameraID);
 
             webarkitLOGi("Allocated videoFrameSize %d", this->videoFrameSize);
 
