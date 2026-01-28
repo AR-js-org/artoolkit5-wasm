@@ -44,7 +44,10 @@ EMSCRIPTEN_BINDINGS(ARToolKitCore_bindings) {
       .function("setDebugMode", &ARToolKitCore::setDebugMode)
       .function("getDebugMode", &ARToolKitCore::getDebugMode)
 
-      .function("getProcessingImage", &ARToolKitCore::getProcessingImage);
+      .function("getProcessingImage", &ARToolKitCore::getProcessingImage)
+
+       .function("getTransMatSquare", &ARToolKitCore::getTransMatSquare)
+       .function("getTransMatSquareCont", &ARToolKitCore::getTransMatSquareCont);
 
   /* errors */
   constant("ERROR_MARKER_INDEX_OUT_OF_BOUNDS", arjs::artoolkit5::MARKER_INDEX_OUT_OF_BOUNDS);
