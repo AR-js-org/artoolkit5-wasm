@@ -19,15 +19,15 @@ set(WRAPPER_SOURCES
 # ---- WebARKitLib (git submodule) ----
 set(WEBARKITLIB_DIR "${CMAKE_SOURCE_DIR}/third_party/WebARKitLib" CACHE PATH "Path to WebARKitLib checkout (submodule).")
 set(WEBARKITLIB_INCLUDE_DIR "${WEBARKITLIB_DIR}/include")
-set(WEBARKITLIB_SRC_DIR     "${WEBARKITLIB_DIR}/lib/SRC")
+set(WEBARKITLIB_SRC_DIR "${WEBARKITLIB_DIR}/lib/SRC")
 
-if(NOT EXISTS "${WEBARKITLIB_INCLUDE_DIR}/AR/ar.h")
+if (NOT EXISTS "${WEBARKITLIB_INCLUDE_DIR}/AR/ar.h")
     message(FATAL_ERROR "Could not find ${WEBARKITLIB_INCLUDE_DIR}/AR/ar.h. Did you init submodules? (git submodule update --init --recursive)")
-endif()
+endif ()
 
-if(NOT EXISTS "${WEBARKITLIB_SRC_DIR}/AR")
+if (NOT EXISTS "${WEBARKITLIB_SRC_DIR}/AR")
     message(FATAL_ERROR "Could not find ${WEBARKITLIB_SRC_DIR}/AR. Expected WebARKitLib/lib/SRC/AR.")
-endif()
+endif ()
 
 # ---- WebIDL Binder generation ----
 set(IDL_FILE "${CMAKE_SOURCE_DIR}/idl/ARToolKitCore.idl")
@@ -35,7 +35,7 @@ set(WEBIDL_OUT_DIR "${CMAKE_BINARY_DIR}/webidl")
 file(MAKE_DIRECTORY "${WEBIDL_OUT_DIR}")
 
 set(GENERATED_GLUE_BASE "${WEBIDL_OUT_DIR}/ARToolKitCore_glue")
-set(GENERATED_GLUE_CPP  "${GENERATED_GLUE_BASE}.cpp")
+set(GENERATED_GLUE_CPP "${GENERATED_GLUE_BASE}.cpp")
 set(GENERATED_GLUE_JS "${GENERATED_GLUE_BASE}.js")
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
@@ -44,17 +44,17 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 #   -DWEBIDL_BINDER_PY=/emsdk/upstream/emscripten/tools/webidl_binder.py
 set(WEBIDL_BINDER_PY "" CACHE FILEPATH "Path to Emscripten webidl_binder.py")
 
-if(NOT WEBIDL_BINDER_PY)
-    if(EXISTS "/emsdk/upstream/emscripten/tools/webidl_binder.py")
+if (NOT WEBIDL_BINDER_PY)
+    if (EXISTS "/emsdk/upstream/emscripten/tools/webidl_binder.py")
         set(WEBIDL_BINDER_PY "/emsdk/upstream/emscripten/tools/webidl_binder.py")
-    elseif(EXISTS "/emsdk/emscripten/tools/webidl_binder.py")
+    elseif (EXISTS "/emsdk/emscripten/tools/webidl_binder.py")
         set(WEBIDL_BINDER_PY "/emsdk/emscripten/tools/webidl_binder.py")
-    endif()
-endif()
+    endif ()
+endif ()
 
-if(NOT WEBIDL_BINDER_PY OR NOT EXISTS "${WEBIDL_BINDER_PY}")
+if (NOT WEBIDL_BINDER_PY OR NOT EXISTS "${WEBIDL_BINDER_PY}")
     message(FATAL_ERROR "Could not locate webidl_binder.py. WEBIDL_BINDER_PY='${WEBIDL_BINDER_PY}'. You can pass -DWEBIDL_BINDER_PY=/path/to/webidl_binder.py")
-endif()
+endif ()
 
 message(STATUS "Using WebIDL binder: ${WEBIDL_BINDER_PY}")
 
@@ -91,6 +91,10 @@ file(GLOB WEBARKIT_VIDEO_SOURCES
         "${WEBARKITLIB_SRC_DIR}/Video/*.c"
 )
 
+file(GLOB WEBARKIT_EXTRA_SOURCES
+        "${WEBARKITLIB_SRC_DIR}/WebARKit/*.cpp"
+        "${WEBARKITLIB_DIR}/WebARKit/*.cpp")
+
 # Optional: if you hit missing symbols, uncomment this to include multimarker support sources.
 # file(GLOB WEBARKIT_ARMULTI_SOURCES
 #   "${WEBARKITLIB_SRC_DIR}/ARMulti/*.c"
@@ -102,15 +106,15 @@ list(LENGTH WEBARKIT_ARICP_SOURCES WEBARKIT_ARICP_SOURCES_COUNT)
 list(LENGTH WEBARKIT_ARUTIL_SOURCES WEBARKIT_ARUTIL_SOURCES_COUNT)
 list(LENGTH WEBARKIT_VIDEO_SOURCES WEBARKIT_VIDEO_SOURCES_COUNT)
 
-if(WEBARKIT_AR_SOURCES_COUNT EQUAL 0)
+if (WEBARKIT_AR_SOURCES_COUNT EQUAL 0)
     message(FATAL_ERROR "No sources found in ${WEBARKITLIB_SRC_DIR}/AR. Check WebARKitLib checkout.")
-endif()
+endif ()
 
 set(USE_FLAGS "-s USE_ZLIB=1")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${USE_FLAGS}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${USE_FLAGS}")
 
-# ---- Build target ----
+# ---- Build target (WebIDL / webidl_binder generated) ----
 add_executable(artoolkit5
         ${WRAPPER_SOURCES}
         ${WEBARKIT_AR_SOURCES}
@@ -118,7 +122,7 @@ add_executable(artoolkit5
         ${WEBARKIT_ARUTIL_SOURCES}
         ${WEBARKIT_VIDEO_SOURCES}
         # ${WEBARKIT_ARMULTI_SOURCES}
-        "${GENERATED_GLUE_CPP}"
+        ${GENERATED_GLUE_CPP}
 )
 
 # Inject shim ONLY for the generated WebIDL glue C++ file (avoid affecting C sources).
@@ -130,9 +134,9 @@ target_include_directories(artoolkit5 PRIVATE
         "${CMAKE_SOURCE_DIR}/cpp"
         "${WEBARKITLIB_INCLUDE_DIR}"
         "${WEBARKITLIB_SRC_DIR}"
-        "${WEBIDL_OUT_DIR}"
+        "${WEBARKITLIB_SRC_DIR}/Video"     # aggiunto: trova WebARKitVideoLuma.h
+        "${WEBARKITLIB_SRC_DIR}/AR"        # opzionale: garantisce visibilità degli header AR
 )
-
 
 # If you later need extra internal include dirs (depends on WebARKitLib headers), add them here:
 # target_include_directories(artoolkit5 PRIVATE "${WEBARKITLIB_SRC_DIR}/WebARKit")
@@ -176,6 +180,66 @@ target_link_options(artoolkit5 PRIVATE
 
 set_target_properties(artoolkit5 PROPERTIES
         OUTPUT_NAME "artoolkit5"
+        RUNTIME_OUTPUT_DIRECTORY "${DIST_DIR}"
+)
+
+# ---- New Build target (Embind) ----
+# Create an embind-based WASM module exposing bindings via cpp/bindings/embind/ARToolKitCore_bindings.cpp
+add_executable(artoolkit5-embind
+        #${WRAPPER_SOURCES}
+        ${WEBARKIT_AR_SOURCES}
+        ${WEBARKIT_ARICP_SOURCES}
+        ${WEBARKIT_ARUTIL_SOURCES}
+        ${WEBARKIT_VIDEO_SOURCES}
+        # ${WEBARKIT_ARMULTI_SOURCES}
+        ${WEBARKIT_EXTRA_SOURCES}
+        cpp/arjs/artoolkit5/ARToolKitCore.cpp
+        cpp/arjs/artoolkit5/ARToolKitCore.h
+        cpp/arjs/artoolkit5/ARToolKitCore_bindings.cpp
+)
+
+# Reuse include directories
+target_include_directories(artoolkit5-embind PRIVATE
+        "${CMAKE_SOURCE_DIR}/cpp"
+        "${WEBARKITLIB_INCLUDE_DIR}"
+        "${WEBARKITLIB_DIR}/WebARKit/include"
+        "${WEBARKITLIB_SRC_DIR}"
+        "${WEBARKITLIB_SRC_DIR}/Video"     # aggiunto: trova WebARKitVideoLuma.h
+        "${WEBARKITLIB_SRC_DIR}/AR"
+)
+
+#target_include_directories(artoolkit5-embind PRIVATE ${CMAKE_SOURCE_DIR}/cpp ${CMAKE_SOURCE_DIR}/third_party/WebARKitLib/include ${CMAKE_SOURCE_DIR}/third_party/WebARKitLib/lib/SRC ${CMAKE_SOURCE_DIR}/third_party/WebARKitLib/lib/SRC/Video)
+
+# Compile options similar to the other target
+target_compile_options(artoolkit5-embind PRIVATE
+        -Oz
+        -Wno-warn-absolute-paths
+)
+
+# Link options: enable embind (--bind) and similar emscripten flags.
+target_link_options(artoolkit5-embind PRIVATE
+        "SHELL:-s USE_ZLIB=1"
+        "SHELL:-s USE_LIBJPEG=1"
+
+        "SHELL:-s WASM=1"
+        "SHELL:-s MODULARIZE=1"
+        "SHELL:-s EXPORT_ES6=1"
+        "SHELL:-s EXPORT_NAME='createARToolKit5EmbindModule'"
+
+        "SHELL:-s ALLOW_MEMORY_GROWTH=1"
+        "SHELL:-s ASSERTIONS=0"
+        "SHELL:-s DISABLE_EXCEPTION_CATCHING=0"
+        "SHELL:-s SINGLE_FILE=0"
+        "SHELL:-s ENVIRONMENT=web"
+
+        "SHELL:-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF32','FS']"
+
+        "SHELL:--bind"
+        #"SHELL:--post-js ${CMAKE_SOURCE_DIR}/cpp/bindings/embind/embind_post.js" # optional shim if needed; remove if not used
+)
+
+set_target_properties(artoolkit5-embind PROPERTIES
+        OUTPUT_NAME "artoolkit5-embind"
         RUNTIME_OUTPUT_DIRECTORY "${DIST_DIR}"
 )
 
