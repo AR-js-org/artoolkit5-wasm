@@ -1,6 +1,6 @@
 // src/index.ts
 import createEmscriptenModule from "../dist/artoolkit5-embind.js";
-import { loadCameraFromUrl, addMarkerFromUrl } from './loader.js';
+import { loadCameraFromUrl, addMarkerFromUrl } from './loader-embind.js';
 
 export type LocateFile = (path: string, prefix: string) => string;
 
@@ -14,8 +14,10 @@ export async function createARToolKit(opts: CreateARToolKitOptions = {}) {
         locateFile: opts.locateFile,
         wasmBinary: opts.wasmBinary,
     });
+    console.log("mod from index.js:" , mod)
 
     const core = new mod.ARToolKitCore();
+    console.log("core from index.js:" , core)
 
     const UNKNOWN_MARKER = -1;
     const PATTERN_MARKER = 0;
@@ -23,20 +25,14 @@ export async function createARToolKit(opts: CreateARToolKitOptions = {}) {
 
     // “freeze” per evitare mutazioni accidentali.
     const constants = Object.freeze({
-        ERROR_OK: core.ERROR_OK_(),
-        ERROR_NOT_INITIALIZED: core.ERROR_NOT_INITIALIZED_(),
-        ERROR_INVALID_ARGUMENT: core.ERROR_INVALID_ARGUMENT_(),
-        ERROR_ARCONTROLLER_NOT_FOUND: core.ERROR_ARCONTROLLER_NOT_FOUND_(),
-        ERROR_MARKER_INDEX_OUT_OF_BOUNDS: core.ERROR_MARKER_INDEX_OUT_OF_BOUNDS_(),
+        AR_DEBUG_DISABLE: mod.AR_DEBUG_DISABLE,
+        AR_DEBUG_ENABLE: mod.AR_DEBUG_ENABLE,
 
-        AR_DEBUG_DISABLE: core.AR_DEBUG_DISABLE_(),
-        AR_DEBUG_ENABLE: core.AR_DEBUG_ENABLE_(),
-
-        AR_LOG_LEVEL_DEBUG: core.AR_LOG_LEVEL_DEBUG_(),
-        AR_LOG_LEVEL_INFO: core.AR_LOG_LEVEL_INFO_(),
-        AR_LOG_LEVEL_WARN: core.AR_LOG_LEVEL_WARN_(),
-        AR_LOG_LEVEL_ERROR: core.AR_LOG_LEVEL_ERROR_(),
-        AR_LOG_LEVEL_REL_INFO: core.AR_LOG_LEVEL_REL_INFO_(),
+        AR_LOG_LEVEL_DEBUG: mod.AR_LOG_LEVEL_DEBUG,
+        AR_LOG_LEVEL_INFO: mod.AR_LOG_LEVEL_INFO,
+        AR_LOG_LEVEL_WARN: mod.AR_LOG_LEVEL_WARN,
+        AR_LOG_LEVEL_ERROR: mod.AR_LOG_LEVEL_ERROR,
+        AR_LOG_LEVEL_REL_INFO: mod.AR_LOG_LEVEL_REL_INFO,
 
         UNKNOWN_MARKER,
         PATTERN_MARKER,

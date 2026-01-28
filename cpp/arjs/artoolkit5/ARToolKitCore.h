@@ -50,7 +50,7 @@ namespace arjs
 
             int teardown();
             int loadCamera(std::string cparam_name);
-            int setCamera(int id, int cameraID);
+            int setCamera(int cameraID);
             emscripten::val getCameraLens();
 
             int addMarker(std::string patt_name);
@@ -71,12 +71,12 @@ namespace arjs
             void setImageProcMode(int mode);
             int getImageProcMode();
 
-            int getTransMatSquare(int id, int markerIndex, int markerWidth);
-            int getTransMatSquareCont(int id, int markerIndex, int markerWidth);
-            int setMarkerInfoDir(int id, int markerIndex, int dir);
+            int getTransMatSquare(int markerIndex, int markerWidth);
+            int getTransMatSquareCont(int markerIndex, int markerWidth);
+            int setMarkerInfoDir(int markerIndex, int dir);
 
-            int detectMarker(int id);
-            int getMarkerNum(int id);
+            int detectMarker();
+            int getMarkerNum();
             int getMarkerInfo( int markerIndex);
 
             int setup(int width, int height, int cameraID);
