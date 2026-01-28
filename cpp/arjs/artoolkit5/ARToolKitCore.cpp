@@ -362,7 +362,7 @@ namespace arjs
         emscripten::val ARToolKitCore::getMarkerInfo(int markerIndex)
         {
             if (this->arhandle->marker_num <= markerIndex) {
-                return emscripten::val::null();
+                return emscripten::val(MARKER_INDEX_OUT_OF_BOUNDS);
             }
             ARMarkerInfo* markerInfo = markerIndex <0 ? &gMarkerInfo : &((this->arhandle)->markerInfo[markerIndex]);
 
@@ -371,6 +371,7 @@ namespace arjs
             info.set("dir", markerInfo->dir);
             info.set("cf", markerInfo->cf);
             info.set("area", markerInfo->area);
+            info.set("errorCorrected", markerInfo->errorCorrected);
 
             emscripten::val pos = emscripten::val::array();
             pos.call<void>("push", markerInfo->pos[0]);
