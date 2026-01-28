@@ -28,17 +28,11 @@ int32_t Core::setup(int32_t width, int32_t height, int32_t cameraID) {
 
   this->videoFrameSize = width * height * 4 * sizeof(ARUint8);
 
-  frameRGBA_.resize(static_cast<size_t>(this->width) *
-                    static_cast<size_t>(this->height) * 4u);
-  frameGRAY_.resize(static_cast<size_t>(this->width) *
-                    static_cast<size_t>(this->height));
+  this->frameRGBAPtr_ = (ARUint8 *)malloc(this->videoFrameSize);
+  frameRGBABytes_ = static_cast<int32_t>(this->videoFrameSize);
 
-  //frameRGBAPtr_ = frameRGBA_.empty() ? nullptr : frameRGBA_.data();
-  this->frameRGBAPtr_ = (ARUint8*) malloc(this->videoFrameSize);
-  frameRGBABytes_ = static_cast<int32_t>(frameRGBA_.size());
-  //frameGRAYPtr_ = frameGRAY_.empty() ? nullptr : frameGRAY_.data();
-  this->frameGRAYPtr_ = (ARUint8*) malloc(this->width * this->height);
-  frameGRAYBytes_ = static_cast<int32_t>(frameGRAY_.size());
+  this->frameGRAYPtr_ = (ARUint8 *)malloc(this->width * this->height);
+  frameGRAYBytes_ = static_cast<int32_t>(this->width * this->height);
 
   if ((this->pattHandle = arPattCreateHandle()) == nullptr) {
     ARLOGe("setup(): Error: arPattCreateHandle.\n");
@@ -62,15 +56,17 @@ int32_t Core::teardown() {
     this->pattHandle = nullptr;
   }
 
-  frameRGBA_.clear();
-  frameGRAY_.clear();
+  if (this->frameRGBAPtr_) {
+    free(this->frameRGBAPtr_);
+    this->frameRGBAPtr_ = nullptr;
+  }
+  if (this->frameGRAYPtr_) {
+    free(this->frameGRAYPtr_);
+    this->frameGRAYPtr_ = nullptr;
+  }
+
   this->width = 0;
   this->height = 0;
-
-  frameRGBAPtr_ = nullptr;
-  frameGRAYPtr_ = nullptr;
-  frameRGBABytes_ = 0;
-  frameGRAYBytes_ = 0;
 
   return ERROR_OK;
 }
@@ -221,22 +217,26 @@ void Core::updateCameraLens_() {
 }
 
 int Core::getFrameBufferRGBA() const {
-  return frameRGBA_.empty()
+  /*return frameRGBA_.empty()
              ? 0
-             : static_cast<int>(reinterpret_cast<uintptr_t>(frameRGBA_.data()));
+             : static_cast<int>(reinterpret_cast<uintptr_t>(frameRGBA_.data()));*/
+  return static_cast<int>(reinterpret_cast<uintptr_t>(this->frameRGBAPtr_));
 }
 
 int Core::getFrameBufferGRAY() const {
-  return frameGRAY_.empty()
+  /*return frameGRAY_.empty()
              ? 0
-             : static_cast<int>(reinterpret_cast<uintptr_t>(frameGRAY_.data()));
+             : static_cast<int>(reinterpret_cast<uintptr_t>(frameGRAY_.data()));*/
+  return static_cast<int>(reinterpret_cast<uintptr_t>(this->frameGRAYPtr_));
 }
 
 int32_t Core::detectMarker() {
   /*if (!this->arHandle)
     return ERROR_NOT_INITIALIZED;*/
 
-  AR2VideoBufferT buff{};
+  AR2VideoBufferT buff{0};
+  
+  buff.buff = this->frameRGBAPtr_;     // RGBA
   buff.fillFlag = 1;
 
   // Prefer external pointers; fall back to internal buffers.
@@ -247,25 +247,22 @@ int32_t Core::detectMarker() {
                       ? frameGRAYPtr_
                       : (frameGRAY_.empty() ? nullptr : frameGRAY_.data());*/
 
-  buff.buff = this->frameRGBAPtr_;     // RGBA
   buff.buffLuma = this->frameGRAYPtr_; // Luma (GRAY)
 
   return arDetectMarker(this->arHandle, &buff);
 }
 
-int32_t Core::setFrameRGBA(int dataPtr, int32_t len) {
-  if (!dataPtr || len <= 0)
+int32_t Core::setFrameRGBA(int dataPtr) {
+  if (!dataPtr)
     return ERROR_INVALID_ARGUMENT;
   frameRGBAPtr_ = reinterpret_cast<ARUint8 *>(static_cast<uintptr_t>(dataPtr));
-  frameRGBABytes_ = len;
   return ERROR_OK;
 }
 
-int32_t Core::setFrameGRAY(int dataPtr, int32_t len) {
-  if (!dataPtr || len <= 0)
+int32_t Core::setFrameGRAY(int dataPtr) {
+  if (!dataPtr)
     return ERROR_INVALID_ARGUMENT;
   frameGRAYPtr_ = reinterpret_cast<ARUint8 *>(static_cast<uintptr_t>(dataPtr));
-  frameGRAYBytes_ = len;
   return ERROR_OK;
 }
 
@@ -285,10 +282,11 @@ int32_t Core::getMarkerInfoRaw(int32_t index, ARMarkerInfo *out) const {
   return ERROR_OK_();
 }
 
-ARMarkerInfo Core::getMarkerInfo(int32_t index) const {
-  ARMarkerInfo out{};
-  getMarkerInfoRaw(index, &out);
-  return out;
+ARMarkerInfo Core::getMarkerInfo(int32_t markerIndex) const {
+  //ARMarkerInfo out{};
+  //getMarkerInfoRaw(index, &out);
+  ARMarkerInfo* markerInfo = markerIndex < 0 ? &gMarkerInfo : &((this->arHandle)->markerInfo[markerIndex]);
+  return *markerInfo;
 }
 
 int32_t Core::setMarkerInfoDir(int markerIndex, int dir) const {
