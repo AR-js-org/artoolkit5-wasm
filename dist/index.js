@@ -1,4 +1,4 @@
-import L from "../dist/artoolkit5.js";
+import L from "../dist/artoolkit5-embind.js";
 async function r(E) {
   const R = await fetch(E);
   if (!R.ok) throw new Error(`fetch failed ${R.status} ${R.statusText}: ${E}`);
