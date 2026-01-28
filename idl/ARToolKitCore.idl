@@ -36,7 +36,7 @@ interface ARToolKitCore {
    static long AR_DEFAULT_IMAGE_PROC_MODE_();
 
    static long AR_MAX_LOOP_COUNT_();
-   static long AR_LOOP_BREAK_THRESH_();
+   static double AR_LOOP_BREAK_THRESH_();
 
    static long AR_LOG_LEVEL_DEBUG_();
    static long AR_LOG_LEVEL_INFO_();
@@ -95,8 +95,8 @@ interface ARToolKitCore {
   long getFrameBufferGRAY();
   long getFrameWidth();
   long getFrameHeight();
-  long setFrameRGBA(long dataPtr, long dataLen);
-  long setFrameGRAY(long dataPtr, long dataLen);
+  long setFrameRGBA(long dataPtr);
+  long setFrameGRAY(long dataPtr);
 
   // ---- detect ----
   // 0=RGBA8, 1=GRAY8

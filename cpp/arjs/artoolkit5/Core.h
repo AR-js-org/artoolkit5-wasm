@@ -87,8 +87,8 @@ public:
   int32_t detectMarker();
 
   // ---- direct frame pointers (WASM memory) ----
-  int32_t setFrameRGBA(int dataPtr, int32_t len);
-  int32_t setFrameGRAY(int dataPtr, int32_t len);
+  int32_t setFrameRGBA(int dataPtr);
+  int32_t setFrameGRAY(int dataPtr);
 
   // ---- Results ----
   int32_t getMarkerNum() const;
