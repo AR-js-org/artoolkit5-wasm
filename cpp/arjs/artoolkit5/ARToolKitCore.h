@@ -77,7 +77,7 @@ namespace arjs
 
             int detectMarker();
             int getMarkerNum();
-            int getMarkerInfo( int markerIndex);
+            emscripten::val getMarkerInfo( int markerIndex);
 
             int setup(int width, int height, int cameraID);
 

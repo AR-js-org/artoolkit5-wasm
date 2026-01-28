@@ -359,13 +359,44 @@ namespace arjs
             return this->arhandle->marker_num;
         }
 
-        int ARToolKitCore::getMarkerInfo(int markerIndex)
+        emscripten::val ARToolKitCore::getMarkerInfo(int markerIndex)
         {
             if (this->arhandle->marker_num <= markerIndex) {
-                return MARKER_INDEX_OUT_OF_BOUNDS;
+                return emscripten::val::null();
             }
-            ARMarkerInfo* markerInfo = markerIndex < 0 ? &gMarkerInfo : &((this->arhandle)->markerInfo[markerIndex]);
-            return 0;
+            ARMarkerInfo* markerInfo = markerIndex <0 ? &gMarkerInfo : &((this->arhandle)->markerInfo[markerIndex]);
+
+            emscripten::val info = emscripten::val::object();
+            info.set("id", markerInfo->id);
+            info.set("dir", markerInfo->dir);
+            info.set("cf", markerInfo->cf);
+            info.set("area", markerInfo->area);
+
+            emscripten::val pos = emscripten::val::array();
+            pos.call<void>("push", markerInfo->pos[0]);
+            pos.call<void>("push", markerInfo->pos[1]);
+            info.set("pos", pos);
+
+            emscripten::val line = emscripten::val::array();
+            for (int i =0; i <4; ++i) {
+                emscripten::val row = emscripten::val::array();
+                for (int j =0; j <3; ++j) {
+                    row.call<void>("push", markerInfo->line[i][j]);
+                }
+                line.call<void>("push", row);
+            }
+            info.set("line", line);
+
+            emscripten::val vertex = emscripten::val::array();
+            for (int i =0; i <4; ++i) {
+                emscripten::val v = emscripten::val::array();
+                v.call<void>("push", markerInfo->vertex[i][0]);
+                v.call<void>("push", markerInfo->vertex[i][1]);
+                vertex.call<void>("push", v);
+            }
+            info.set("vertex", vertex);
+
+            return info;
         }
 
 
