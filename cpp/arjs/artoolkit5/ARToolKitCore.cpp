@@ -41,20 +41,20 @@ namespace arjs
                 auto vli = webarkit::webarkitVideoLumaInit(this->width, this->height, true);
                 if (!vli)
                 {
-                    webarkitLOGe("Failed to initialize WebARKitLumaInfo.");
+                    ARLOGe("Failed to initialize WebARKitLumaInfo.");
                     return -1;
                 }
 
                 auto out = webarkit::webarkitVideoLuma(vli, vf.data());
                 if (!out)
                 {
-                    webarkitLOGe("Failed to process video luma.");
+                    ARLOGe("Failed to process video luma.");
                     webarkit::webarkitVideoLumaFinal(&vli);
                     return -1;
                 }
                 if (this->videoLuma)
                 {
-                    webarkitLOGd("Copy videoLuma with simd !");
+                    ARLOGd("Copy videoLuma with simd !");
                     std::copy(out, out + this->width * this->height, this->videoLuma.get());
                     webarkit::webarkitVideoLumaFinal(&vli);
                 }
@@ -70,7 +70,7 @@ namespace arjs
             {
                 if (!internalLuma)
                 {
-                    webarkitLOGd("Inside videoLuma no simd !");
+                    ARLOGd("Inside videoLuma no simd !");
                     std::copy(vl.begin(), vl.end(), this->videoLuma.get());
                 }
             }
@@ -83,7 +83,7 @@ namespace arjs
             {
                 if (arPattDetach(this->arhandle) != 0)
                 {
-                    webarkitLOGe("Error detaching pattern from arhandle.");
+                    ARLOGe("Error detaching pattern from arhandle.");
                 }
                 arDeleteHandle(this->arhandle);
                 this->arhandle = nullptr;
@@ -143,7 +143,7 @@ namespace arjs
             this->paramLT = arParamLTCreate(&(this->param), AR_PARAM_LT_DEFAULT_OFFSET);
             if (!this->paramLT)
             {
-                webarkitLOGe("setCamera(): Error: arParamLTCreate for cameraID %d.", cameraID);
+                ARLOGe("setCamera(): Error: arParamLTCreate for cameraID %d.", cameraID);
                 return -1;
             }
 
@@ -153,7 +153,7 @@ namespace arjs
             // setup camera
             if ((this->arhandle = arCreateHandle(this->paramLT)) == nullptr)
             {
-                webarkitLOGe("setCamera(): Error: arCreateHandle.");
+                ARLOGe("setCamera(): Error: arCreateHandle.");
                 return -1;
             }
             // AR_DEFAULT_PIXEL_FORMAT
@@ -162,7 +162,7 @@ namespace arjs
             this->ar3DHandle = ar3DCreateHandle(&(this->param));
             if (this->ar3DHandle == nullptr)
             {
-                webarkitLOGe("setCamera(): Error creating 3D handle");
+                ARLOGe("setCamera(): Error creating 3D handle");
                 return -1;
             }
 
@@ -186,7 +186,7 @@ namespace arjs
             ARParam param;
             if (arParamLoad(cparam_name.c_str(), 1, &param) < 0)
             {
-                webarkitLOGe("loadCamera(): Error loading parameter file %s for camera.",
+                ARLOGe("loadCamera(): Error loading parameter file %s for camera.",
                              cparam_name.c_str());
                 return -1;
             }
@@ -334,7 +334,7 @@ namespace arjs
                 return;
             if (arSetLabelingThresh(this->arhandle, threshold) == 0)
             {
-                webarkitLOGi("Threshold set to %d", threshold);
+                ARLOGi("Threshold set to %d", threshold);
             };
             // default 100
             // arSetLabelingThreshMode
@@ -359,7 +359,7 @@ namespace arjs
 
             if (arSetLabelingThreshMode(this->arhandle, thresholdMode) == 0)
             {
-                webarkitLOGi("Threshold mode set to %d", (int)thresholdMode);
+                ARLOGi("Threshold mode set to %d", (int)thresholdMode);
             }
         }
 
@@ -378,7 +378,7 @@ namespace arjs
         int ARToolKitCore::setDebugMode(int enable)
         {
             arSetDebugMode(this->arhandle, enable ? AR_DEBUG_ENABLE : AR_DEBUG_DISABLE);
-            webarkitLOGi("Debug mode set to %s", enable ? "on." : "off.");
+            ARLOGi("Debug mode set to %s", enable ? "on." : "off.");
 
             return enable;
         }
@@ -391,7 +391,7 @@ namespace arjs
             }
             else
             {
-                webarkitLOGe("Error: arhandle is null.");
+                ARLOGe("Error: arhandle is null.");
                 return -1;
             }
         }
@@ -409,7 +409,7 @@ namespace arjs
             int imageProcMode = mode;
             if (arSetImageProcMode(this->arhandle, mode) == 0)
             {
-                webarkitLOGi("Image proc. mode set to %d.", imageProcMode);
+                ARLOGi("Image proc. mode set to %d.", imageProcMode);
             }
         }
 
@@ -577,7 +577,7 @@ namespace arjs
 
             setCamera(cameraID);
 
-            webarkitLOGi("Allocated videoFrameSize %d", this->videoFrameSize);
+            ARLOGi("Allocated videoFrameSize %d", this->videoFrameSize);
 
             return this->id;
         }
