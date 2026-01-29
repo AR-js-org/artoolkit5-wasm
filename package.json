@@ -33,8 +33,8 @@
     "build:wasm": "node scripts/build-wasm-docker.mjs",
     "build:wrap": "vite build && tsc -p tsconfig.build.json",
     "build": "npm run build:wasm && npm run build:wrap",
-    "lint:cpp": "find cpp -name \"*.cpp\" -o -name \"*.h\" | xargs clang-format --dry-run -Werror",
-    "format:cpp": "find cpp -name \"*.cpp\" -o -name \"*.h\" | xargs clang-format -i"
+    "lint:cpp": "node scripts/clang-format.mjs --lint",
+    "format:cpp": "node scripts/clang-format.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
