@@ -60,6 +60,10 @@ namespace arjs
             ARdouble getProjectionNearPlane();
             void setProjectionFarPlane(const ARdouble projectionFarPlane);
             ARdouble getProjectionFarPlane();
+            void setPattRatio(float ratio);
+            ARdouble getPattRatio();
+            void setMatrixCodeType(int type);
+            int getMatrixCodeType(int id);
             void recalculateCameraLens();
             void setThreshold(int threshold);
             int getThreshold();

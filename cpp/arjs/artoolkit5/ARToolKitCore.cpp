@@ -227,6 +227,38 @@ namespace arjs
 
         ARdouble ARToolKitCore::getProjectionFarPlane() { return this->farPlane; }
 
+        void ARToolKitCore::setPattRatio(float ratio) {
+            if (ratio <= 0.0f || ratio >= 1.0f) return;
+            ARdouble pattRatio = (ARdouble)ratio;
+            if (this->arhandle) {
+                if (arSetPattRatio(this->arhandle, pattRatio) == 0) {
+                    ARLOGi("Pattern ratio size set to %f.\n", pattRatio);
+                }
+            }
+        }
+
+        ARdouble ARToolKitCore::getPattRatio() {
+            ARdouble pattRatio;
+            if (this->arhandle) {
+                if (arGetPattRatio(this->arhandle, &pattRatio) == 0) {
+                    return pattRatio;
+                }
+            }
+
+            return -1;
+        }
+
+        void ARToolKitCore::setMatrixCodeType(int type) {
+            AR_MATRIX_CODE_TYPE matrixType = (AR_MATRIX_CODE_TYPE)type;
+            arSetMatrixCodeType(this->arhandle, matrixType);
+        }
+
+        int ARToolKitCore::getMatrixCodeType(int id) {
+            AR_MATRIX_CODE_TYPE matrixType;
+            arGetMatrixCodeType(this->arhandle, &matrixType);
+            return matrixType;
+        }
+
         void ARToolKitCore::setThreshold(int threshold) {
             if (threshold < 0 || threshold > 255)
                 return;

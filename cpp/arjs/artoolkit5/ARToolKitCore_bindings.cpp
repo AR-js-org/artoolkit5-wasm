@@ -33,6 +33,12 @@ EMSCRIPTEN_BINDINGS(ARToolKitCore_bindings) {
       .function("setProjectionFarPlane", &ARToolKitCore::setProjectionFarPlane)
       .function("getProjectionFarPlane", &ARToolKitCore::getProjectionFarPlane)
 
+      .function("setPattRatio", &ARToolKitCore::setPattRatio)
+      .function("getPattRatio", &ARToolKitCore::getPattRatio)
+
+      .function("setMatrixCodeType", &ARToolKitCore::setMatrixCodeType)
+      .function("getMatrixCodeType", &ARToolKitCore::getMatrixCodeType)
+
       .function("setThresholdMode", &ARToolKitCore::setThresholdMode)
       .function("getThresholdMode", &ARToolKitCore::getThresholdMode)
 
