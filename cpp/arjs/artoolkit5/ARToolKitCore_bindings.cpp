@@ -45,6 +45,9 @@ EMSCRIPTEN_BINDINGS (ARToolKitCore_bindings)
         .function("setThreshold", &ARToolKitCore::setThreshold)
         .function("getThreshold", &ARToolKitCore::getThreshold)
 
+        .function("setLabelingMode", &ARToolKitCore::setLabelingMode)
+        .function("getLabelingMode", &ARToolKitCore::getLabelingMode)
+
         .function("setImageProcMode", &ARToolKitCore::setImageProcMode)
         .function("getImageProcMode", &ARToolKitCore::getImageProcMode)
 

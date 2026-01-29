@@ -78,6 +78,9 @@ namespace arjs
             void setThreshold(int threshold);
             int getThreshold();
 
+            void setLabelingMode(int mode);
+            int getLabelingMode();
+
             void setThresholdMode(int mode);
             int getThresholdMode();
 
@@ -97,6 +100,7 @@ namespace arjs
             int getMarkerNum();
             emscripten::val getMarkerInfo(int markerIndex);
             std::intptr_t getTransform();
+            int getProcessingImage();
 
             int setup(int width, int height, int cameraID);
 
