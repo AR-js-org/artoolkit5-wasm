@@ -77,26 +77,31 @@ namespace arjs
             return 0;
         };
 
-        void ARToolKitCore::deleteHandle() {
-            if (this->arhandle != nullptr) {
-                if (arPattDetach(this->arhandle) != 0) {
+        void ARToolKitCore::deleteHandle()
+        {
+            if (this->arhandle != nullptr)
+            {
+                if (arPattDetach(this->arhandle) != 0)
+                {
                     webarkitLOGe("Error detaching pattern from arhandle.");
                 }
                 arDeleteHandle(this->arhandle);
                 this->arhandle = nullptr;
             }
-            if (this->ar3DHandle != nullptr) {
+            if (this->ar3DHandle != nullptr)
+            {
                 ar3DDeleteHandle(&(this->ar3DHandle));
                 this->ar3DHandle = nullptr;
             }
-            if (this->paramLT != nullptr) {
+            if (this->paramLT != nullptr)
+            {
                 arParamLTFree(&(this->paramLT));
                 this->paramLT = nullptr;
             }
         }
 
-        int ARToolKitCore::teardown() {
-
+        int ARToolKitCore::teardown()
+        {
             // Reset unique pointers instead of freeing memory
             this->videoFrame.reset();
             this->videoLuma.reset();
@@ -109,15 +114,17 @@ namespace arjs
             return 0;
         }
 
-        int ARToolKitCore::setCamera(int cameraID) {
-
-            if (cameraParams.find(cameraID) == cameraParams.end()) {
+        int ARToolKitCore::setCamera(int cameraID)
+        {
+            if (cameraParams.find(cameraID) == cameraParams.end())
+            {
                 return -1;
             }
 
             this->param = cameraParams[cameraID];
 
-            if (this->param.xsize != this->width || this->param.ysize != this->height) {
+            if (this->param.xsize != this->width || this->param.ysize != this->height)
+            {
                 ARLOGw("*** Camera Parameter resized from %d, %d. ***\n", this->param.xsize,
                        this->param.ysize);
                 arParamChangeSize(&(this->param), this->width, this->height,
@@ -128,20 +135,24 @@ namespace arjs
             arParamDisp(&(this->param));
 
             deleteHandle();
-            if (this->paramLT != nullptr) {
+            if (this->paramLT != nullptr)
+            {
                 deleteHandle();
             }
 
             this->paramLT = arParamLTCreate(&(this->param), AR_PARAM_LT_DEFAULT_OFFSET);
-            if (!this->paramLT) {
+            if (!this->paramLT)
+            {
                 webarkitLOGe("setCamera(): Error: arParamLTCreate for cameraID %d.", cameraID);
                 return -1;
             }
 
-            ARLOGi("setCamera(): arParamLTCreated\n..%d, %d\n", (this->paramLT->param).xsize, (this->paramLT->param).ysize);
+            ARLOGi("setCamera(): arParamLTCreated\n..%d, %d\n", (this->paramLT->param).xsize,
+                   (this->paramLT->param).ysize);
 
             // setup camera
-            if ((this->arhandle = arCreateHandle(this->paramLT)) == nullptr) {
+            if ((this->arhandle = arCreateHandle(this->paramLT)) == nullptr)
+            {
                 webarkitLOGe("setCamera(): Error: arCreateHandle.");
                 return -1;
             }
@@ -149,7 +160,8 @@ namespace arjs
             int set = arSetPixelFormat(this->arhandle, this->pixFormat);
 
             this->ar3DHandle = ar3DCreateHandle(&(this->param));
-            if (this->ar3DHandle == nullptr) {
+            if (this->ar3DHandle == nullptr)
+            {
                 webarkitLOGe("setCamera(): Error creating 3D handle");
                 return -1;
             }
@@ -163,14 +175,17 @@ namespace arjs
             return 0;
         }
 
-        void ARToolKitCore::recalculateCameraLens() {
+        void ARToolKitCore::recalculateCameraLens()
+        {
             arglCameraFrustumRH(&((this->paramLT)->param), this->nearPlane,
                                 this->farPlane, this->cameraLens);
         }
 
-        int ARToolKitCore::loadCamera(std::string cparam_name) {
+        int ARToolKitCore::loadCamera(std::string cparam_name)
+        {
             ARParam param;
-            if (arParamLoad(cparam_name.c_str(), 1, &param) < 0) {
+            if (arParamLoad(cparam_name.c_str(), 1, &param) < 0)
+            {
                 webarkitLOGe("loadCamera(): Error loading parameter file %s for camera.",
                              cparam_name.c_str());
                 return -1;
@@ -181,17 +196,22 @@ namespace arjs
             return cameraID;
         }
 
-        emscripten::val ARToolKitCore::getCameraLens() {
+        emscripten::val ARToolKitCore::getCameraLens()
+        {
             emscripten::val lens = emscripten::val::array();
-            for (const auto& value : this->cameraLens) {
+            for (const auto& value : this->cameraLens)
+            {
                 lens.call<void>("push", value);
             }
             return lens;
         }
 
-        int ARToolKitCore::loadMarker(const char *patt_name, int *patt_id, ARHandle *arhandle, ARPattHandle **pattHandle_p) {
+        int ARToolKitCore::loadMarker(const char* patt_name, int* patt_id, ARHandle* arhandle,
+                                      ARPattHandle** pattHandle_p)
+        {
             // Loading only 1 pattern in this example.
-            if ((*patt_id = arPattLoad(*pattHandle_p, patt_name)) < 0) {
+            if ((*patt_id = arPattLoad(*pattHandle_p, patt_name)) < 0)
+            {
                 ARLOGe("loadMarker(): Error loading pattern file %s.\n", patt_name);
                 arPattDeleteHandle(*pattHandle_p);
                 return (FALSE);
@@ -200,10 +220,12 @@ namespace arjs
             return (TRUE);
         }
 
-        int ARToolKitCore::addMarker(std::string patt_name) {
+        int ARToolKitCore::addMarker(std::string patt_name)
+        {
             // const char *patt_name
             // Load marker(s).
-            if (!loadMarker(patt_name.c_str(), &(this->patt_id), this->arhandle, &(this->arPattHandle))) {
+            if (!loadMarker(patt_name.c_str(), &(this->patt_id), this->arhandle, &(this->arPattHandle)))
+            {
                 ARLOGe("ARToolKitJS(): Unable to set up AR marker.\n");
                 return -1;
             }
@@ -215,32 +237,59 @@ namespace arjs
 
         int ARToolKitCore::getLogLevel() { return arLogLevel; }
 
-        void ARToolKitCore::setProjectionNearPlane(const ARdouble projectionNearPlane) {
+        void ARToolKitCore::setProjectionNearPlane(const ARdouble projectionNearPlane)
+        {
             this->nearPlane = projectionNearPlane;
         }
 
         ARdouble ARToolKitCore::getProjectionNearPlane() { return this->nearPlane; }
 
-        void ARToolKitCore::setProjectionFarPlane(const ARdouble projectionFarPlane) {
+        void ARToolKitCore::setProjectionFarPlane(const ARdouble projectionFarPlane)
+        {
             this->farPlane = projectionFarPlane;
         }
 
         ARdouble ARToolKitCore::getProjectionFarPlane() { return this->farPlane; }
 
-        void ARToolKitCore::setPattRatio(float ratio) {
+        void ARToolKitCore::setPatternDetectionMode(int mode)
+        {
+            if (arSetPatternDetectionMode(this->arhandle, mode) == 0)
+            {
+                ARLOGi("Pattern detection mode set to %d.\n", mode);
+            }
+        }
+
+        int ARToolKitCore::getPatternDetectionMode()
+        {
+            int mode;
+            if (arGetPatternDetectionMode(this->arhandle, &mode) == 0)
+            {
+                return mode;
+            }
+
+            return -1;
+        }
+
+        void ARToolKitCore::setPattRatio(float ratio)
+        {
             if (ratio <= 0.0f || ratio >= 1.0f) return;
             ARdouble pattRatio = (ARdouble)ratio;
-            if (this->arhandle) {
-                if (arSetPattRatio(this->arhandle, pattRatio) == 0) {
+            if (this->arhandle)
+            {
+                if (arSetPattRatio(this->arhandle, pattRatio) == 0)
+                {
                     ARLOGi("Pattern ratio size set to %f.\n", pattRatio);
                 }
             }
         }
 
-        ARdouble ARToolKitCore::getPattRatio() {
+        ARdouble ARToolKitCore::getPattRatio()
+        {
             ARdouble pattRatio;
-            if (this->arhandle) {
-                if (arGetPattRatio(this->arhandle, &pattRatio) == 0) {
+            if (this->arhandle)
+            {
+                if (arGetPattRatio(this->arhandle, &pattRatio) == 0)
+                {
                     return pattRatio;
                 }
             }
@@ -248,21 +297,25 @@ namespace arjs
             return -1;
         }
 
-        void ARToolKitCore::setMatrixCodeType(int type) {
+        void ARToolKitCore::setMatrixCodeType(int type)
+        {
             AR_MATRIX_CODE_TYPE matrixType = (AR_MATRIX_CODE_TYPE)type;
             arSetMatrixCodeType(this->arhandle, matrixType);
         }
 
-        int ARToolKitCore::getMatrixCodeType(int id) {
+        int ARToolKitCore::getMatrixCodeType(int id)
+        {
             AR_MATRIX_CODE_TYPE matrixType;
             arGetMatrixCodeType(this->arhandle, &matrixType);
             return matrixType;
         }
 
-        void ARToolKitCore::setThreshold(int threshold) {
+        void ARToolKitCore::setThreshold(int threshold)
+        {
             if (threshold < 0 || threshold > 255)
                 return;
-            if (arSetLabelingThresh(this->arhandle, threshold) == 0) {
+            if (arSetLabelingThresh(this->arhandle, threshold) == 0)
+            {
                 webarkitLOGi("Threshold set to %d", threshold);
             };
             // default 100
@@ -271,77 +324,92 @@ namespace arjs
             // AR_LABELING_THRESH_MODE_AUTO_OTSU, AR_LABELING_THRESH_MODE_AUTO_ADAPTIVE
         }
 
-        int ARToolKitCore::getThreshold() {
+        int ARToolKitCore::getThreshold()
+        {
             int threshold;
-            if (arGetLabelingThresh(this->arhandle, &threshold) == 0) {
+            if (arGetLabelingThresh(this->arhandle, &threshold) == 0)
+            {
                 return threshold;
             };
 
             return -1;
         }
 
-        void ARToolKitCore::setThresholdMode(int mode) {
+        void ARToolKitCore::setThresholdMode(int mode)
+        {
             AR_LABELING_THRESH_MODE thresholdMode = (AR_LABELING_THRESH_MODE)mode;
 
-            if (arSetLabelingThreshMode(this->arhandle, thresholdMode) == 0) {
+            if (arSetLabelingThreshMode(this->arhandle, thresholdMode) == 0)
+            {
                 webarkitLOGi("Threshold mode set to %d", (int)thresholdMode);
             }
         }
 
-        int ARToolKitCore::getThresholdMode() {
+        int ARToolKitCore::getThresholdMode()
+        {
             AR_LABELING_THRESH_MODE thresholdMode;
 
-            if (arGetLabelingThreshMode(this->arhandle, &thresholdMode) == 0) {
+            if (arGetLabelingThreshMode(this->arhandle, &thresholdMode) == 0)
+            {
                 return thresholdMode;
             }
 
             return -1;
         }
 
-        int ARToolKitCore::setDebugMode(int enable) {
+        int ARToolKitCore::setDebugMode(int enable)
+        {
             arSetDebugMode(this->arhandle, enable ? AR_DEBUG_ENABLE : AR_DEBUG_DISABLE);
             webarkitLOGi("Debug mode set to %s", enable ? "on." : "off.");
 
             return enable;
         }
 
-        int ARToolKitCore::getProcessingImage() {
-
-            if (this->arhandle != nullptr) {
+        int ARToolKitCore::getProcessingImage()
+        {
+            if (this->arhandle != nullptr)
+            {
                 return reinterpret_cast<int>(this->arhandle->labelInfo.bwImage);
-            } else {
+            }
+            else
+            {
                 webarkitLOGe("Error: arhandle is null.");
                 return -1;
             }
         }
 
-        int ARToolKitCore::getDebugMode() {
+        int ARToolKitCore::getDebugMode()
+        {
             int enable;
 
             arGetDebugMode(this->arhandle, &enable);
             return enable;
         }
 
-        void ARToolKitCore::setImageProcMode(int mode) {
-
+        void ARToolKitCore::setImageProcMode(int mode)
+        {
             int imageProcMode = mode;
-            if (arSetImageProcMode(this->arhandle, mode) == 0) {
+            if (arSetImageProcMode(this->arhandle, mode) == 0)
+            {
                 webarkitLOGi("Image proc. mode set to %d.", imageProcMode);
             }
         }
 
-        int ARToolKitCore::getImageProcMode() {
+        int ARToolKitCore::getImageProcMode()
+        {
             int imageProcMode;
-            if (arGetImageProcMode(this->arhandle, &imageProcMode) == 0) {
+            if (arGetImageProcMode(this->arhandle, &imageProcMode) == 0)
+            {
                 return imageProcMode;
             }
 
             return -1;
         }
 
-        int ARToolKitCore::getTransMatSquare(int markerIndex, int markerWidth) {
-
-            if (this->arhandle->marker_num <= markerIndex) {
+        int ARToolKitCore::getTransMatSquare(int markerIndex, int markerWidth)
+        {
+            if (this->arhandle->marker_num <= markerIndex)
+            {
                 return MARKER_INDEX_OUT_OF_BOUNDS;
             }
             ARMarkerInfo* marker = markerIndex < 0 ? &gMarkerInfo : &((this->arhandle)->markerInfo[markerIndex]);
@@ -351,9 +419,10 @@ namespace arjs
             return 0;
         }
 
-        int ARToolKitCore::getTransMatSquareCont(int markerIndex, int markerWidth) {
-
-            if (this->arhandle->marker_num <= markerIndex) {
+        int ARToolKitCore::getTransMatSquareCont(int markerIndex, int markerWidth)
+        {
+            if (this->arhandle->marker_num <= markerIndex)
+            {
                 return MARKER_INDEX_OUT_OF_BOUNDS;
             }
             ARMarkerInfo* marker = markerIndex < 0 ? &gMarkerInfo : &((this->arhandle)->markerInfo[markerIndex]);
@@ -363,9 +432,10 @@ namespace arjs
             return 0;
         }
 
-        int ARToolKitCore::setMarkerInfoDir(int markerIndex, int dir) {
-
-            if (this->arhandle->marker_num <= markerIndex) {
+        int ARToolKitCore::setMarkerInfoDir(int markerIndex, int dir)
+        {
+            if (this->arhandle->marker_num <= markerIndex)
+            {
                 return MARKER_INDEX_OUT_OF_BOUNDS;
             }
             ARMarkerInfo* marker = markerIndex < 0 ? &gMarkerInfo : &((this->arhandle)->markerInfo[markerIndex]);
@@ -375,9 +445,10 @@ namespace arjs
             return 0;
         }
 
-        int ARToolKitCore::setMarkerInfoVertex(int markerIndex) {
-
-            if (this->arhandle->marker_num <= markerIndex) {
+        int ARToolKitCore::setMarkerInfoVertex(int markerIndex)
+        {
+            if (this->arhandle->marker_num <= markerIndex)
+            {
                 return MARKER_INDEX_OUT_OF_BOUNDS;
             }
             ARMarkerInfo* marker = markerIndex < 0 ? &gMarkerInfo : &((this->arhandle)->markerInfo[markerIndex]);
@@ -399,8 +470,8 @@ namespace arjs
             return 0;
         }
 
-        int ARToolKitCore::detectMarker() {
-
+        int ARToolKitCore::detectMarker()
+        {
             // Convert video frame to AR2VideoBufferT
             AR2VideoBufferT buff = {0};
             buff.buff = this->videoFrame.get();
@@ -408,20 +479,22 @@ namespace arjs
 
             buff.buffLuma = this->videoLuma.get();
 
-            return arDetectMarker( this->arhandle, &buff);
+            return arDetectMarker(this->arhandle, &buff);
         }
 
 
-        int ARToolKitCore::getMarkerNum() {
+        int ARToolKitCore::getMarkerNum()
+        {
             return this->arhandle->marker_num;
         }
 
         emscripten::val ARToolKitCore::getMarkerInfo(int markerIndex)
         {
-            if (this->arhandle->marker_num <= markerIndex) {
+            if (this->arhandle->marker_num <= markerIndex)
+            {
                 return emscripten::val(MARKER_INDEX_OUT_OF_BOUNDS);
             }
-            ARMarkerInfo* markerInfo = markerIndex <0 ? &gMarkerInfo : &((this->arhandle)->markerInfo[markerIndex]);
+            ARMarkerInfo* markerInfo = markerIndex < 0 ? &gMarkerInfo : &((this->arhandle)->markerInfo[markerIndex]);
 
             emscripten::val info = emscripten::val::object();
             info.set("id", markerInfo->id);
@@ -436,9 +509,11 @@ namespace arjs
             info.set("pos", pos);
 
             emscripten::val line = emscripten::val::array();
-            for (int i =0; i <4; ++i) {
+            for (int i = 0; i < 4; ++i)
+            {
                 emscripten::val row = emscripten::val::array();
-                for (int j =0; j <3; ++j) {
+                for (int j = 0; j < 3; ++j)
+                {
                     row.call<void>("push", markerInfo->line[i][j]);
                 }
                 line.call<void>("push", row);
@@ -446,7 +521,8 @@ namespace arjs
             info.set("line", line);
 
             emscripten::val vertex = emscripten::val::array();
-            for (int i =0; i <4; ++i) {
+            for (int i = 0; i < 4; ++i)
+            {
                 emscripten::val v = emscripten::val::array();
                 v.call<void>("push", markerInfo->vertex[i][0]);
                 v.call<void>("push", markerInfo->vertex[i][1]);
@@ -463,7 +539,8 @@ namespace arjs
         }
 
 
-        int ARToolKitCore::setup(int width, int height, int cameraID) {
+        int ARToolKitCore::setup(int width, int height, int cameraID)
+        {
             int id = gARControllerID++;
             this->id = id;
 
@@ -475,7 +552,8 @@ namespace arjs
             this->videoFrame = std::unique_ptr<ARUint8[]>(new ARUint8[this->videoFrameSize]);
             this->videoLuma = std::unique_ptr<ARUint8[]>(new ARUint8[this->width * this->height]);
 
-            if ((this->arPattHandle = arPattCreateHandle()) == NULL) {
+            if ((this->arPattHandle = arPattCreateHandle()) == NULL)
+            {
                 ARLOGe("setup(): Error: arPattCreateHandle.\n");
             }
 
@@ -485,8 +563,6 @@ namespace arjs
 
             return this->id;
         }
-
-
     } // artoolkit5
 } // arjs
 //#include "ARToolKitCore_bindings.cpp"

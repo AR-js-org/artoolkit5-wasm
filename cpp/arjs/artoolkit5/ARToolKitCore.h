@@ -26,7 +26,7 @@ namespace arjs
     {
         static int gARControllerID = 0;
         static int gCameraID = 0;
-        static ARdouble	gTransform[3][4];
+        static ARdouble gTransform[3][4];
 
         static int ARCONTROLLER_NOT_FOUND = -1;
         static int MULTIMARKER_NOT_FOUND = -2;
@@ -44,45 +44,58 @@ namespace arjs
         public:
             ARToolKitCore();
             ~ARToolKitCore();
+
+            int teardown();
+
             int passVideoData(emscripten::val videoFrame, emscripten::val videoLuma, bool internalLuma);
+
             void setLogLevel(int level);
             int getLogLevel();
 
-            int teardown();
             int loadCamera(std::string cparam_name);
             int setCamera(int cameraID);
             emscripten::val getCameraLens();
+            void recalculateCameraLens();
 
             int addMarker(std::string patt_name);
 
             // setters and getters
             void setProjectionNearPlane(const ARdouble projectionNearPlane);
             ARdouble getProjectionNearPlane();
+
             void setProjectionFarPlane(const ARdouble projectionFarPlane);
             ARdouble getProjectionFarPlane();
+
+            void setPatternDetectionMode(int mode);
+            int getPatternDetectionMode();
+
             void setPattRatio(float ratio);
             ARdouble getPattRatio();
+
             void setMatrixCodeType(int type);
             int getMatrixCodeType(int id);
-            void recalculateCameraLens();
+
             void setThreshold(int threshold);
             int getThreshold();
+
             void setThresholdMode(int mode);
             int getThresholdMode();
+
             int setDebugMode(int enable);
-            int getProcessingImage();
             int getDebugMode();
+
             void setImageProcMode(int mode);
             int getImageProcMode();
 
             int getTransMatSquare(int markerIndex, int markerWidth);
             int getTransMatSquareCont(int markerIndex, int markerWidth);
+
             int setMarkerInfoDir(int markerIndex, int dir);
             int setMarkerInfoVertex(int markerIndex);
 
             int detectMarker();
             int getMarkerNum();
-            emscripten::val getMarkerInfo( int markerIndex);
+            emscripten::val getMarkerInfo(int markerIndex);
             std::intptr_t getTransform();
 
             int setup(int width, int height, int cameraID);
@@ -90,24 +103,24 @@ namespace arjs
         private:
             void deleteHandle();
 
-            int loadMarker(const char *patt_name, int *patt_id, ARHandle *arHandle,
-                               ARPattHandle **pattHandle_p);
+            int loadMarker(const char* patt_name, int* patt_id, ARHandle* arHandle,
+                           ARPattHandle** pattHandle_p);
 
             int id;
 
             ARParam param;
-            ARParamLT *paramLT;
+            ARParamLT* paramLT;
 
-            std::unique_ptr<ARUint8[]> videoFrame;  // Changed from std::shared_ptr
+            std::unique_ptr<ARUint8[]> videoFrame; // Changed from std::shared_ptr
             int videoFrameSize;
-            std::unique_ptr<ARUint8[]> videoLuma;   // Changed from std::shared_ptr
+            std::unique_ptr<ARUint8[]> videoLuma; // Changed from std::shared_ptr
 
             int width;
             int height;
 
-            ARHandle *arhandle;
-            ARPattHandle *arPattHandle;
-            AR3DHandle *ar3DHandle;
+            ARHandle* arhandle;
+            ARPattHandle* arPattHandle;
+            AR3DHandle* ar3DHandle;
 
             ARdouble nearPlane;
             ARdouble farPlane;
