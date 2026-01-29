@@ -1,7 +1,8 @@
 #pragma once
 #include <cstdint>
 
-namespace arjs::artoolkit5 {
+namespace arjs::artoolkit5
+{
 
     // Keep these stable; mirror them in WebIDL "const" or expose getters.
     constexpr int32_t ERROR_OK = 0;
