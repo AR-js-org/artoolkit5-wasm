@@ -310,6 +310,24 @@ namespace arjs
             return matrixType;
         }
 
+        void ARToolKitCore::setLabelingMode(int mode) {
+            int labelingMode = mode;
+
+            if (arSetLabelingMode(this->arhandle, labelingMode) == 0) {
+                ARLOGi("Labeling mode set to %d\n", labelingMode);
+            }
+        }
+
+        int ARToolKitCore::getLabelingMode() {
+            int labelingMode;
+
+            if (arGetLabelingMode(this->arhandle, &labelingMode) == 0) {
+                return labelingMode;
+            }
+
+            return -1;
+        }
+
         void ARToolKitCore::setThreshold(int threshold)
         {
             if (threshold < 0 || threshold > 255)
