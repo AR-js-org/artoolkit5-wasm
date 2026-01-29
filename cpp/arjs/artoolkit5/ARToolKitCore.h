@@ -4,20 +4,14 @@
 
 #pragma once
 
-#include <stdio.h>
 #include <AR/ar.h>
 #include <emscripten.h>
 #include <emscripten/val.h>
 #include <string>
-#include <vector>
 #include <unordered_map>
 #include <memory>
 #include <AR/config.h>
-#include <AR2/tracking.h>
-#include <AR/arFilterTransMat.h>
 #include <AR/paramGL.h>
-#include <KPM/kpm.h>
-#include <WebARKit/WebARKitLog.h>
 #include <WebARKitVideoLuma.h>
 
 namespace arjs
