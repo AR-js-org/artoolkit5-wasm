@@ -74,7 +74,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${USE_FLAGS}")
 
 # ---- New Build target (Embind) ----
 # Create an embind-based WASM module exposing bindings via cpp/bindings/embind/ARToolKitCore_bindings.cpp
-add_executable(artoolkit5-embind
+add_executable(artoolkit5
         ${WEBARKIT_AR_SOURCES}
         ${WEBARKIT_ARICP_SOURCES}
         ${WEBARKIT_ARUTIL_SOURCES}
@@ -87,7 +87,7 @@ add_executable(artoolkit5-embind
 )
 
 # Reuse include directories
-target_include_directories(artoolkit5-embind PRIVATE
+target_include_directories(artoolkit5 PRIVATE
         "${CMAKE_SOURCE_DIR}/cpp"
         "${WEBARKITLIB_INCLUDE_DIR}"
         "${WEBARKITLIB_DIR}/WebARKit/include"
@@ -97,20 +97,20 @@ target_include_directories(artoolkit5-embind PRIVATE
 )
 
 # Compile options similar to the other target
-target_compile_options(artoolkit5-embind PRIVATE
+target_compile_options(artoolkit5 PRIVATE
         -Oz
         -Wno-warn-absolute-paths
 )
 
 # Link options: enable embind (--bind) and similar emscripten flags.
-target_link_options(artoolkit5-embind PRIVATE
+target_link_options(artoolkit5 PRIVATE
         "SHELL:-s USE_ZLIB=1"
         "SHELL:-s USE_LIBJPEG=1"
 
         "SHELL:-s WASM=1"
         "SHELL:-s MODULARIZE=1"
         "SHELL:-s EXPORT_ES6=1"
-        "SHELL:-s EXPORT_NAME='createARToolKit5EmbindModule'"
+        "SHELL:-s EXPORT_NAME='createARToolKit5Module'"
 
         "SHELL:-s ALLOW_MEMORY_GROWTH=1"
         "SHELL:-s ASSERTIONS=0"
@@ -123,8 +123,8 @@ target_link_options(artoolkit5-embind PRIVATE
         "SHELL:--bind"
 )
 
-set_target_properties(artoolkit5-embind PROPERTIES
-        OUTPUT_NAME "artoolkit5-embind"
+set_target_properties(artoolkit5 PROPERTIES
+        OUTPUT_NAME "artoolkit5"
         RUNTIME_OUTPUT_DIRECTORY "${DIST_DIR}"
 )
 
@@ -135,8 +135,8 @@ message(STATUS "Sources matched: AR=${WEBARKIT_AR_SOURCES_COUNT}, ARICP=${WEBARK
 if (ENABLE_WASM_DEBUG_FLAGS)
     message(STATUS "Enabling WASM debug flags: -g2 -s ASSERTIONS=1 --profiling")
 
-    target_compile_options(artoolkit5-embind PRIVATE -g2)
-    target_link_options(artoolkit5-embind PRIVATE
+    target_compile_options(artoolkit5 PRIVATE -g2)
+    target_link_options(artoolkit5 PRIVATE
             -g2
             "SHELL:-s ASSERTIONS=1"
             "SHELL:--profiling"
