@@ -21,7 +21,7 @@ export async function loadCameraFromUrl(mod: Mod, core: any, url: string, vpath 
   const data = await fetchBinary(url);
   ensureDir(mod.FS, vpath);
   mod.FS.writeFile(vpath, data);
-  return core.loadCameraFromPath(vpath);
+  return core._loadCamera(vpath);
 }
 
 export async function addMarkerFromUrl(mod: Mod, core: any, url: string, vpath = '/data/patt.hiro') {

@@ -12,12 +12,6 @@ file(MAKE_DIRECTORY "${DIST_DIR}")
 
 option(ENABLE_WASM_DEBUG_FLAGS "Enable Emscripten debug flags" OFF)
 
-# ---- Wrapper sources (your code) ----
-set(WRAPPER_SOURCES
-        cpp/arjs/artoolkit5/Core.cpp
-        cpp/bindings/webidl/glue.cpp
-)
-
 # ---- WebARKitLib (git submodule) ----
 set(WEBARKITLIB_DIR "${CMAKE_SOURCE_DIR}/third_party/WebARKitLib" CACHE PATH "Path to WebARKitLib checkout (submodule).")
 set(WEBARKITLIB_INCLUDE_DIR "${WEBARKITLIB_DIR}/include")
@@ -30,44 +24,6 @@ endif ()
 if (NOT EXISTS "${WEBARKITLIB_SRC_DIR}/AR")
     message(FATAL_ERROR "Could not find ${WEBARKITLIB_SRC_DIR}/AR. Expected WebARKitLib/lib/SRC/AR.")
 endif ()
-
-# ---- WebIDL Binder generation ----
-set(IDL_FILE "${CMAKE_SOURCE_DIR}/idl/ARToolKitCore.idl")
-set(WEBIDL_OUT_DIR "${CMAKE_BINARY_DIR}/webidl")
-file(MAKE_DIRECTORY "${WEBIDL_OUT_DIR}")
-
-set(GENERATED_GLUE_BASE "${WEBIDL_OUT_DIR}/ARToolKitCore_glue")
-set(GENERATED_GLUE_CPP "${GENERATED_GLUE_BASE}.cpp")
-set(GENERATED_GLUE_JS "${GENERATED_GLUE_BASE}.js")
-
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
-
-# Allow override from CLI (works well with Docker):
-#   -DWEBIDL_BINDER_PY=/emsdk/upstream/emscripten/tools/webidl_binder.py
-set(WEBIDL_BINDER_PY "" CACHE FILEPATH "Path to Emscripten webidl_binder.py")
-
-if (NOT WEBIDL_BINDER_PY)
-    if (EXISTS "/emsdk/upstream/emscripten/tools/webidl_binder.py")
-        set(WEBIDL_BINDER_PY "/emsdk/upstream/emscripten/tools/webidl_binder.py")
-    elseif (EXISTS "/emsdk/emscripten/tools/webidl_binder.py")
-        set(WEBIDL_BINDER_PY "/emsdk/emscripten/tools/webidl_binder.py")
-    endif ()
-endif ()
-
-if (NOT WEBIDL_BINDER_PY OR NOT EXISTS "${WEBIDL_BINDER_PY}")
-    message(FATAL_ERROR "Could not locate webidl_binder.py. WEBIDL_BINDER_PY='${WEBIDL_BINDER_PY}'. You can pass -DWEBIDL_BINDER_PY=/path/to/webidl_binder.py")
-endif ()
-
-message(STATUS "Using WebIDL binder: ${WEBIDL_BINDER_PY}")
-
-# Newer webidl_binder.py interface: webidl_binder.py infile outfile
-add_custom_command(
-        OUTPUT "${GENERATED_GLUE_CPP}" "${GENERATED_GLUE_JS}"
-        COMMAND "${Python3_EXECUTABLE}" "${WEBIDL_BINDER_PY}" "${IDL_FILE}" "${GENERATED_GLUE_BASE}"
-        DEPENDS "${IDL_FILE}"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        VERBATIM
-)
 
 # ---- WebARKitLib sources (pattern + barcode only) ----
 # Keep the build focused: exclude AR2/KPM/NFT. Add ARMulti back only if link errors demand it.
@@ -116,79 +72,9 @@ set(USE_FLAGS "-s USE_ZLIB=1")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${USE_FLAGS}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${USE_FLAGS}")
 
-# ---- Build target (WebIDL / webidl_binder generated) ----
-add_executable(artoolkit5
-        ${WRAPPER_SOURCES}
-        ${WEBARKIT_AR_SOURCES}
-        ${WEBARKIT_ARICP_SOURCES}
-        ${WEBARKIT_ARUTIL_SOURCES}
-        ${WEBARKIT_VIDEO_SOURCES}
-        # ${WEBARKIT_ARMULTI_SOURCES}
-        ${GENERATED_GLUE_CPP}
-)
-
-# Inject shim ONLY for the generated WebIDL glue C++ file (avoid affecting C sources).
-set_source_files_properties("${GENERATED_GLUE_CPP}" PROPERTIES
-        COMPILE_OPTIONS "-include;${CMAKE_SOURCE_DIR}/cpp/bindings/webidl/ARToolKitCore_shim.h"
-)
-
-target_include_directories(artoolkit5 PRIVATE
-        "${CMAKE_SOURCE_DIR}/cpp"
-        "${WEBARKITLIB_INCLUDE_DIR}"
-        "${WEBARKITLIB_SRC_DIR}"
-        "${WEBARKITLIB_SRC_DIR}/Video"     # aggiunto: trova WebARKitVideoLuma.h
-        "${WEBARKITLIB_SRC_DIR}/AR"        # opzionale: garantisce visibilità degli header AR
-)
-
-# If you later need extra internal include dirs (depends on WebARKitLib headers), add them here:
-# target_include_directories(artoolkit5 PRIVATE "${WEBARKITLIB_SRC_DIR}/WebARKit")
-
-# ---- Emscripten compile/link flags ----
-target_compile_options(artoolkit5 PRIVATE
-        -Oz
-        -Wno-warn-absolute-paths
-)
-
-# If you want easier debugging temporarily:
-# target_link_options(artoolkit5 PRIVATE "SHELL:-s ASSERTIONS=1")
-
-target_link_options(artoolkit5 PRIVATE
-        # deps (keep if the lib uses them)
-        "SHELL:-s USE_ZLIB=1"
-        "SHELL:-s USE_LIBJPEG=1"
-
-        # output style
-        "SHELL:-s WASM=1"
-        "SHELL:-s MODULARIZE=1"
-        "SHELL:-s EXPORT_ES6=1"
-        "SHELL:-s EXPORT_NAME='createARToolKit5Module'"
-        #"SHELL:-s USE_ES6_IMPORT_META=0"
-
-        # runtime
-        "SHELL:-s ALLOW_MEMORY_GROWTH=1"
-        "SHELL:-s ASSERTIONS=0"
-        "SHELL:-s DISABLE_EXCEPTION_CATCHING=0"
-        "SHELL:-s SINGLE_FILE=0"
-        "SHELL:-s ENVIRONMENT=web"
-
-        # JS access to heaps + malloc/free (useful for your TS wrapper)
-        "SHELL:-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF32','FS']"
-        "SHELL:-s EXPORTED_FUNCTIONS=['_malloc','_free']"
-        "SHELL:--post-js ${GENERATED_GLUE_JS}"
-)
-
-# If you temporarily rely on Emscripten FS (e.g. writing cparam/patt into MEMFS), export FS too:
-# target_link_options(artoolkit5 PRIVATE "SHELL:-s EXPORTED_RUNTIME_METHODS=['FS','HEAPU8','HEAPF32','_malloc','_free']")
-
-set_target_properties(artoolkit5 PROPERTIES
-        OUTPUT_NAME "artoolkit5"
-        RUNTIME_OUTPUT_DIRECTORY "${DIST_DIR}"
-)
-
 # ---- New Build target (Embind) ----
 # Create an embind-based WASM module exposing bindings via cpp/bindings/embind/ARToolKitCore_bindings.cpp
-add_executable(artoolkit5-embind
-        #${WRAPPER_SOURCES}
+add_executable(artoolkit5
         ${WEBARKIT_AR_SOURCES}
         ${WEBARKIT_ARICP_SOURCES}
         ${WEBARKIT_ARUTIL_SOURCES}
@@ -201,7 +87,7 @@ add_executable(artoolkit5-embind
 )
 
 # Reuse include directories
-target_include_directories(artoolkit5-embind PRIVATE
+target_include_directories(artoolkit5 PRIVATE
         "${CMAKE_SOURCE_DIR}/cpp"
         "${WEBARKITLIB_INCLUDE_DIR}"
         "${WEBARKITLIB_DIR}/WebARKit/include"
@@ -210,23 +96,21 @@ target_include_directories(artoolkit5-embind PRIVATE
         "${WEBARKITLIB_SRC_DIR}/AR"
 )
 
-#target_include_directories(artoolkit5-embind PRIVATE ${CMAKE_SOURCE_DIR}/cpp ${CMAKE_SOURCE_DIR}/third_party/WebARKitLib/include ${CMAKE_SOURCE_DIR}/third_party/WebARKitLib/lib/SRC ${CMAKE_SOURCE_DIR}/third_party/WebARKitLib/lib/SRC/Video)
-
 # Compile options similar to the other target
-target_compile_options(artoolkit5-embind PRIVATE
+target_compile_options(artoolkit5 PRIVATE
         -Oz
         -Wno-warn-absolute-paths
 )
 
 # Link options: enable embind (--bind) and similar emscripten flags.
-target_link_options(artoolkit5-embind PRIVATE
+target_link_options(artoolkit5 PRIVATE
         "SHELL:-s USE_ZLIB=1"
         "SHELL:-s USE_LIBJPEG=1"
 
         "SHELL:-s WASM=1"
         "SHELL:-s MODULARIZE=1"
         "SHELL:-s EXPORT_ES6=1"
-        "SHELL:-s EXPORT_NAME='createARToolKit5EmbindModule'"
+        "SHELL:-s EXPORT_NAME='createARToolKit5Module'"
 
         "SHELL:-s ALLOW_MEMORY_GROWTH=1"
         "SHELL:-s ASSERTIONS=0"
@@ -237,21 +121,12 @@ target_link_options(artoolkit5-embind PRIVATE
         "SHELL:-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF32','FS']"
 
         "SHELL:--bind"
-        #"SHELL:--post-js ${CMAKE_SOURCE_DIR}/cpp/bindings/embind/embind_post.js" # optional shim if needed; remove if not used
 )
 
-set_target_properties(artoolkit5-embind PROPERTIES
-        OUTPUT_NAME "artoolkit5-embind"
+set_target_properties(artoolkit5 PROPERTIES
+        OUTPUT_NAME "artoolkit5"
         RUNTIME_OUTPUT_DIRECTORY "${DIST_DIR}"
 )
-
-# Copy WebIDL glue JS next to dist outputs.
-#add_custom_target(copy_webidl_glue ALL
-#        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${GENERATED_GLUE_JS}" "${DIST_DIR}/ARToolKitCore_glue.js"
-#        DEPENDS "${GENERATED_GLUE_JS}"
-#        COMMENT "Copying WebIDL glue JS to dist/"
-#)
-# add_dependencies(copy_webidl_glue artoolkit5)
 
 message(STATUS "Output: ${DIST_DIR}")
 message(STATUS "WebARKitLib: ${WEBARKITLIB_DIR}")
@@ -262,13 +137,6 @@ if (ENABLE_WASM_DEBUG_FLAGS)
 
     target_compile_options(artoolkit5 PRIVATE -g2)
     target_link_options(artoolkit5 PRIVATE
-            -g2
-            "SHELL:-s ASSERTIONS=1"
-            "SHELL:--profiling"
-    )
-
-    target_compile_options(artoolkit5-embind PRIVATE -g2)
-    target_link_options(artoolkit5-embind PRIVATE
             -g2
             "SHELL:-s ASSERTIONS=1"
             "SHELL:--profiling"

@@ -8,7 +8,7 @@
 
 <script type="module">
   import createModule from "./../dist/artoolkit5.js";
-  import { fetchBinary, storeDataFile, loadCameraFromUrl, addMarker } from "./utils.js";
+  import { loadCameraFromUrl, addMarkerFromUrl } from "./../dist/index.js"
 
   const mod = await createModule({
     locateFile(path) {
@@ -18,11 +18,7 @@
 
   console.log("Loaded", mod);
   console.log("HEAPU8 length:", mod.HEAPU8?.length);
-  console.log("_malloc:", typeof mod._malloc);
-  console.log("_free:", typeof mod._free);
-
-  const ptr = mod._malloc(64);
-  mod._free(ptr);
+  console.log("FS:", typeof mod.FS);
 
   const width = 640;
   const height = 480;
@@ -30,24 +26,17 @@
   const core = new mod.ARToolKitCore();
   const cameraId = await loadCameraFromUrl(mod, core, "./data/camera_para.dat");
   await core.setup(width, height, cameraId);   // pick your width/height
-  const patt_id = await addMarker(mod, core, "./data/patt.hiro");
+  const patt_id = await addMarkerFromUrl(mod, core, "./data/patt.hiro");
   console.log("patt_id:", patt_id);
 
   console.log(core)
-  console.log("error not initialized: ", core.ERROR_NOT_INITIALIZED_())
-  console.log("AR_DEBUG_ENABLE:", core.AR_DEBUG_ENABLE_?.());
-  console.log("LOG_DEBUG:", mod.ARToolKitCore.AR_LOG_LEVEL_DEBUG_?.());
-  console.log("THRESH_MANUAL:", mod.ARToolKitCore.AR_LABELING_THRESH_MODE_MANUAL_?.());
+  console.log("AR_DEBUG_ENABLE:", mod.AR_DEBUG_ENABLE);
+  console.log("LOG_DEBUG:", mod.AR_LOG_LEVEL_DEBUG);
+  console.log("THRESH_MANUAL:", mod.AR_LABELING_THRESH_MODE_MANUAL);
 
   console.log("instance keys", Object.getOwnPropertyNames(core));
   console.log("proto keys", Object.getOwnPropertyNames(Object.getPrototypeOf(core)));
   console.log("ctor keys", Object.getOwnPropertyNames(mod.ARToolKitCore));
-
-  console.log("inst LOG_DEBUG", core.AR_LOG_LEVEL_DEBUG_?.());
-  console.log("proto LOG_DEBUG", Object.getPrototypeOf(core).AR_LOG_LEVEL_DEBUG_?.());
-  console.log("ctor LOG_DEBUG", mod.ARToolKitCore.AR_LOG_LEVEL_DEBUG_?.());
-
-  console.log("Module LOG_DEBUG", mod.AR_LOG_LEVEL_DEBUG); // a volte le mette su Module
 
   document.body.append("OK");
 </script>

@@ -340,7 +340,6 @@ function initRuntime() {
   runtimeInitialized = true;
   checkStackCookie();
   // Begin ATINITS hooks
-  callRuntimeCallbacks(onInits);
   if (!Module["noFSInit"] && !FS.initialized) FS.init();
   TTY.init();
   // End ATINITS hooks
@@ -3658,6 +3657,1623 @@ function ___syscall_openat(dirfd, path, flags, varargs) {
 
 var __abort_js = () => abort("native code called abort()");
 
+var AsciiToString = ptr => {
+  var str = "";
+  while (1) {
+    var ch = HEAPU8[ptr++];
+    if (!ch) return str;
+    str += String.fromCharCode(ch);
+  }
+};
+
+var awaitingDependencies = {};
+
+var registeredTypes = {};
+
+var typeDependencies = {};
+
+var BindingError = class BindingError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "BindingError";
+  }
+};
+
+var throwBindingError = message => {
+  throw new BindingError(message);
+};
+
+/** @param {Object=} options */ function sharedRegisterType(rawType, registeredInstance, options = {}) {
+  var name = registeredInstance.name;
+  if (!rawType) {
+    throwBindingError(`type "${name}" must have a positive integer typeid pointer`);
+  }
+  if (registeredTypes.hasOwnProperty(rawType)) {
+    if (options.ignoreDuplicateRegistrations) {
+      return;
+    } else {
+      throwBindingError(`Cannot register type '${name}' twice`);
+    }
+  }
+  registeredTypes[rawType] = registeredInstance;
+  delete typeDependencies[rawType];
+  if (awaitingDependencies.hasOwnProperty(rawType)) {
+    var callbacks = awaitingDependencies[rawType];
+    delete awaitingDependencies[rawType];
+    callbacks.forEach(cb => cb());
+  }
+}
+
+/** @param {Object=} options */ function registerType(rawType, registeredInstance, options = {}) {
+  return sharedRegisterType(rawType, registeredInstance, options);
+}
+
+var integerReadValueFromPointer = (name, width, signed) => {
+  // integers are quite common, so generate very specialized functions
+  switch (width) {
+   case 1:
+    return signed ? pointer => HEAP8[pointer] : pointer => HEAPU8[pointer];
+
+   case 2:
+    return signed ? pointer => HEAP16[((pointer) >> 1)] : pointer => HEAPU16[((pointer) >> 1)];
+
+   case 4:
+    return signed ? pointer => HEAP32[((pointer) >> 2)] : pointer => HEAPU32[((pointer) >> 2)];
+
+   case 8:
+    return signed ? pointer => HEAP64[((pointer) >> 3)] : pointer => HEAPU64[((pointer) >> 3)];
+
+   default:
+    throw new TypeError(`invalid integer width (${width}): ${name}`);
+  }
+};
+
+var embindRepr = v => {
+  if (v === null) {
+    return "null";
+  }
+  var t = typeof v;
+  if (t === "object" || t === "array" || t === "function") {
+    return v.toString();
+  } else {
+    return "" + v;
+  }
+};
+
+var assertIntegerRange = (typeName, value, minRange, maxRange) => {
+  if (value < minRange || value > maxRange) {
+    throw new TypeError(`Passing a number "${embindRepr(value)}" from JS side to C/C++ side to an argument of type "${typeName}", which is outside the valid range [${minRange}, ${maxRange}]!`);
+  }
+};
+
+/** @suppress {globalThis} */ var __embind_register_bigint = (primitiveType, name, size, minRange, maxRange) => {
+  name = AsciiToString(name);
+  const isUnsignedType = minRange === 0n;
+  let fromWireType = value => value;
+  if (isUnsignedType) {
+    // uint64 get converted to int64 in ABI, fix them up like we do for 32-bit integers.
+    const bitSize = size * 8;
+    fromWireType = value => BigInt.asUintN(bitSize, value);
+    maxRange = fromWireType(maxRange);
+  }
+  registerType(primitiveType, {
+    name,
+    fromWireType,
+    toWireType: (destructors, value) => {
+      if (typeof value == "number") {
+        value = BigInt(value);
+      } else if (typeof value != "bigint") {
+        throw new TypeError(`Cannot convert "${embindRepr(value)}" to ${this.name}`);
+      }
+      assertIntegerRange(name, value, minRange, maxRange);
+      return value;
+    },
+    readValueFromPointer: integerReadValueFromPointer(name, size, !isUnsignedType),
+    destructorFunction: null
+  });
+};
+
+/** @suppress {globalThis} */ var __embind_register_bool = (rawType, name, trueValue, falseValue) => {
+  name = AsciiToString(name);
+  registerType(rawType, {
+    name,
+    fromWireType: function(wt) {
+      // ambiguous emscripten ABI: sometimes return values are
+      // true or false, and sometimes integers (0 or 1)
+      return !!wt;
+    },
+    toWireType: function(destructors, o) {
+      return o ? trueValue : falseValue;
+    },
+    readValueFromPointer: function(pointer) {
+      return this.fromWireType(HEAPU8[pointer]);
+    },
+    destructorFunction: null
+  });
+};
+
+var shallowCopyInternalPointer = o => ({
+  count: o.count,
+  deleteScheduled: o.deleteScheduled,
+  preservePointerOnDelete: o.preservePointerOnDelete,
+  ptr: o.ptr,
+  ptrType: o.ptrType,
+  smartPtr: o.smartPtr,
+  smartPtrType: o.smartPtrType
+});
+
+var throwInstanceAlreadyDeleted = obj => {
+  function getInstanceTypeName(handle) {
+    return handle.$$.ptrType.registeredClass.name;
+  }
+  throwBindingError(getInstanceTypeName(obj) + " instance already deleted");
+};
+
+var finalizationRegistry = false;
+
+var detachFinalizer = handle => {};
+
+var runDestructor = $$ => {
+  if ($$.smartPtr) {
+    $$.smartPtrType.rawDestructor($$.smartPtr);
+  } else {
+    $$.ptrType.registeredClass.rawDestructor($$.ptr);
+  }
+};
+
+var releaseClassHandle = $$ => {
+  $$.count.value -= 1;
+  var toDelete = 0 === $$.count.value;
+  if (toDelete) {
+    runDestructor($$);
+  }
+};
+
+var downcastPointer = (ptr, ptrClass, desiredClass) => {
+  if (ptrClass === desiredClass) {
+    return ptr;
+  }
+  if (undefined === desiredClass.baseClass) {
+    return null;
+  }
+  var rv = downcastPointer(ptr, ptrClass, desiredClass.baseClass);
+  if (rv === null) {
+    return null;
+  }
+  return desiredClass.downcast(rv);
+};
+
+var registeredPointers = {};
+
+var registeredInstances = {};
+
+var getBasestPointer = (class_, ptr) => {
+  if (ptr === undefined) {
+    throwBindingError("ptr should not be undefined");
+  }
+  while (class_.baseClass) {
+    ptr = class_.upcast(ptr);
+    class_ = class_.baseClass;
+  }
+  return ptr;
+};
+
+var getInheritedInstance = (class_, ptr) => {
+  ptr = getBasestPointer(class_, ptr);
+  return registeredInstances[ptr];
+};
+
+var InternalError = class InternalError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "InternalError";
+  }
+};
+
+var throwInternalError = message => {
+  throw new InternalError(message);
+};
+
+var makeClassHandle = (prototype, record) => {
+  if (!record.ptrType || !record.ptr) {
+    throwInternalError("makeClassHandle requires ptr and ptrType");
+  }
+  var hasSmartPtrType = !!record.smartPtrType;
+  var hasSmartPtr = !!record.smartPtr;
+  if (hasSmartPtrType !== hasSmartPtr) {
+    throwInternalError("Both smartPtrType and smartPtr must be specified");
+  }
+  record.count = {
+    value: 1
+  };
+  return attachFinalizer(Object.create(prototype, {
+    $$: {
+      value: record,
+      writable: true
+    }
+  }));
+};
+
+/** @suppress {globalThis} */ function RegisteredPointer_fromWireType(ptr) {
+  // ptr is a raw pointer (or a raw smartpointer)
+  // rawPointer is a maybe-null raw pointer
+  var rawPointer = this.getPointee(ptr);
+  if (!rawPointer) {
+    this.destructor(ptr);
+    return null;
+  }
+  var registeredInstance = getInheritedInstance(this.registeredClass, rawPointer);
+  if (undefined !== registeredInstance) {
+    // JS object has been neutered, time to repopulate it
+    if (0 === registeredInstance.$$.count.value) {
+      registeredInstance.$$.ptr = rawPointer;
+      registeredInstance.$$.smartPtr = ptr;
+      return registeredInstance["clone"]();
+    } else {
+      // else, just increment reference count on existing object
+      // it already has a reference to the smart pointer
+      var rv = registeredInstance["clone"]();
+      this.destructor(ptr);
+      return rv;
+    }
+  }
+  function makeDefaultHandle() {
+    if (this.isSmartPointer) {
+      return makeClassHandle(this.registeredClass.instancePrototype, {
+        ptrType: this.pointeeType,
+        ptr: rawPointer,
+        smartPtrType: this,
+        smartPtr: ptr
+      });
+    } else {
+      return makeClassHandle(this.registeredClass.instancePrototype, {
+        ptrType: this,
+        ptr
+      });
+    }
+  }
+  var actualType = this.registeredClass.getActualType(rawPointer);
+  var registeredPointerRecord = registeredPointers[actualType];
+  if (!registeredPointerRecord) {
+    return makeDefaultHandle.call(this);
+  }
+  var toType;
+  if (this.isConst) {
+    toType = registeredPointerRecord.constPointerType;
+  } else {
+    toType = registeredPointerRecord.pointerType;
+  }
+  var dp = downcastPointer(rawPointer, this.registeredClass, toType.registeredClass);
+  if (dp === null) {
+    return makeDefaultHandle.call(this);
+  }
+  if (this.isSmartPointer) {
+    return makeClassHandle(toType.registeredClass.instancePrototype, {
+      ptrType: toType,
+      ptr: dp,
+      smartPtrType: this,
+      smartPtr: ptr
+    });
+  } else {
+    return makeClassHandle(toType.registeredClass.instancePrototype, {
+      ptrType: toType,
+      ptr: dp
+    });
+  }
+}
+
+var attachFinalizer = handle => {
+  if (!globalThis.FinalizationRegistry) {
+    attachFinalizer = handle => handle;
+    return handle;
+  }
+  // If the running environment has a FinalizationRegistry (see
+  // https://github.com/tc39/proposal-weakrefs), then attach finalizers
+  // for class handles.  We check for the presence of FinalizationRegistry
+  // at run-time, not build-time.
+  finalizationRegistry = new FinalizationRegistry(info => {
+    console.warn(info.leakWarning);
+    releaseClassHandle(info.$$);
+  });
+  attachFinalizer = handle => {
+    var $$ = handle.$$;
+    var hasSmartPtr = !!$$.smartPtr;
+    if (hasSmartPtr) {
+      // We should not call the destructor on raw pointers in case other code expects the pointee to live
+      var info = {
+        $$
+      };
+      // Create a warning as an Error instance in advance so that we can store
+      // the current stacktrace and point to it when / if a leak is detected.
+      // This is more useful than the empty stacktrace of `FinalizationRegistry`
+      // callback.
+      var cls = $$.ptrType.registeredClass;
+      var err = new Error(`Embind found a leaked C++ instance ${cls.name} <${ptrToString($$.ptr)}>.\n` + "We'll free it automatically in this case, but this functionality is not reliable across various environments.\n" + "Make sure to invoke .delete() manually once you're done with the instance instead.\n" + "Originally allocated");
+      // `.stack` will add "at ..." after this sentence
+      if ("captureStackTrace" in Error) {
+        Error.captureStackTrace(err, RegisteredPointer_fromWireType);
+      }
+      info.leakWarning = err.stack.replace(/^Error: /, "");
+      finalizationRegistry.register(handle, info, handle);
+    }
+    return handle;
+  };
+  detachFinalizer = handle => finalizationRegistry.unregister(handle);
+  return attachFinalizer(handle);
+};
+
+var deletionQueue = [];
+
+var flushPendingDeletes = () => {
+  while (deletionQueue.length) {
+    var obj = deletionQueue.pop();
+    obj.$$.deleteScheduled = false;
+    obj["delete"]();
+  }
+};
+
+var delayFunction;
+
+var init_ClassHandle = () => {
+  let proto = ClassHandle.prototype;
+  Object.assign(proto, {
+    "isAliasOf"(other) {
+      if (!(this instanceof ClassHandle)) {
+        return false;
+      }
+      if (!(other instanceof ClassHandle)) {
+        return false;
+      }
+      var leftClass = this.$$.ptrType.registeredClass;
+      var left = this.$$.ptr;
+      other.$$ = /** @type {Object} */ (other.$$);
+      var rightClass = other.$$.ptrType.registeredClass;
+      var right = other.$$.ptr;
+      while (leftClass.baseClass) {
+        left = leftClass.upcast(left);
+        leftClass = leftClass.baseClass;
+      }
+      while (rightClass.baseClass) {
+        right = rightClass.upcast(right);
+        rightClass = rightClass.baseClass;
+      }
+      return leftClass === rightClass && left === right;
+    },
+    "clone"() {
+      if (!this.$$.ptr) {
+        throwInstanceAlreadyDeleted(this);
+      }
+      if (this.$$.preservePointerOnDelete) {
+        this.$$.count.value += 1;
+        return this;
+      } else {
+        var clone = attachFinalizer(Object.create(Object.getPrototypeOf(this), {
+          $$: {
+            value: shallowCopyInternalPointer(this.$$)
+          }
+        }));
+        clone.$$.count.value += 1;
+        clone.$$.deleteScheduled = false;
+        return clone;
+      }
+    },
+    "delete"() {
+      if (!this.$$.ptr) {
+        throwInstanceAlreadyDeleted(this);
+      }
+      if (this.$$.deleteScheduled && !this.$$.preservePointerOnDelete) {
+        throwBindingError("Object already scheduled for deletion");
+      }
+      detachFinalizer(this);
+      releaseClassHandle(this.$$);
+      if (!this.$$.preservePointerOnDelete) {
+        this.$$.smartPtr = undefined;
+        this.$$.ptr = undefined;
+      }
+    },
+    "isDeleted"() {
+      return !this.$$.ptr;
+    },
+    "deleteLater"() {
+      if (!this.$$.ptr) {
+        throwInstanceAlreadyDeleted(this);
+      }
+      if (this.$$.deleteScheduled && !this.$$.preservePointerOnDelete) {
+        throwBindingError("Object already scheduled for deletion");
+      }
+      deletionQueue.push(this);
+      if (deletionQueue.length === 1 && delayFunction) {
+        delayFunction(flushPendingDeletes);
+      }
+      this.$$.deleteScheduled = true;
+      return this;
+    }
+  });
+  // Support `using ...` from https://github.com/tc39/proposal-explicit-resource-management.
+  const symbolDispose = Symbol.dispose;
+  if (symbolDispose) {
+    proto[symbolDispose] = proto["delete"];
+  }
+};
+
+/** @constructor */ function ClassHandle() {}
+
+var createNamedFunction = (name, func) => Object.defineProperty(func, "name", {
+  value: name
+});
+
+var ensureOverloadTable = (proto, methodName, humanName) => {
+  if (undefined === proto[methodName].overloadTable) {
+    var prevFunc = proto[methodName];
+    // Inject an overload resolver function that routes to the appropriate overload based on the number of arguments.
+    proto[methodName] = function(...args) {
+      // TODO This check can be removed in -O3 level "unsafe" optimizations.
+      if (!proto[methodName].overloadTable.hasOwnProperty(args.length)) {
+        throwBindingError(`Function '${humanName}' called with an invalid number of arguments (${args.length}) - expects one of (${proto[methodName].overloadTable})!`);
+      }
+      return proto[methodName].overloadTable[args.length].apply(this, args);
+    };
+    // Move the previous function into the overload table.
+    proto[methodName].overloadTable = [];
+    proto[methodName].overloadTable[prevFunc.argCount] = prevFunc;
+  }
+};
+
+/** @param {number=} numArguments */ var exposePublicSymbol = (name, value, numArguments) => {
+  if (Module.hasOwnProperty(name)) {
+    if (undefined === numArguments || (undefined !== Module[name].overloadTable && undefined !== Module[name].overloadTable[numArguments])) {
+      throwBindingError(`Cannot register public name '${name}' twice`);
+    }
+    // We are exposing a function with the same name as an existing function. Create an overload table and a function selector
+    // that routes between the two.
+    ensureOverloadTable(Module, name, name);
+    if (Module[name].overloadTable.hasOwnProperty(numArguments)) {
+      throwBindingError(`Cannot register multiple overloads of a function with the same number of arguments (${numArguments})!`);
+    }
+    // Add the new function into the overload table.
+    Module[name].overloadTable[numArguments] = value;
+  } else {
+    Module[name] = value;
+    Module[name].argCount = numArguments;
+  }
+};
+
+var char_0 = 48;
+
+var char_9 = 57;
+
+var makeLegalFunctionName = name => {
+  assert(typeof name === "string");
+  name = name.replace(/[^a-zA-Z0-9_]/g, "$");
+  var f = name.charCodeAt(0);
+  if (f >= char_0 && f <= char_9) {
+    return `_${name}`;
+  }
+  return name;
+};
+
+/** @constructor */ function RegisteredClass(name, constructor, instancePrototype, rawDestructor, baseClass, getActualType, upcast, downcast) {
+  this.name = name;
+  this.constructor = constructor;
+  this.instancePrototype = instancePrototype;
+  this.rawDestructor = rawDestructor;
+  this.baseClass = baseClass;
+  this.getActualType = getActualType;
+  this.upcast = upcast;
+  this.downcast = downcast;
+  this.pureVirtualFunctions = [];
+}
+
+var upcastPointer = (ptr, ptrClass, desiredClass) => {
+  while (ptrClass !== desiredClass) {
+    if (!ptrClass.upcast) {
+      throwBindingError(`Expected null or instance of ${desiredClass.name}, got an instance of ${ptrClass.name}`);
+    }
+    ptr = ptrClass.upcast(ptr);
+    ptrClass = ptrClass.baseClass;
+  }
+  return ptr;
+};
+
+/** @suppress {globalThis} */ function constNoSmartPtrRawPointerToWireType(destructors, handle) {
+  if (handle === null) {
+    if (this.isReference) {
+      throwBindingError(`null is not a valid ${this.name}`);
+    }
+    return 0;
+  }
+  if (!handle.$$) {
+    throwBindingError(`Cannot pass "${embindRepr(handle)}" as a ${this.name}`);
+  }
+  if (!handle.$$.ptr) {
+    throwBindingError(`Cannot pass deleted object as a pointer of type ${this.name}`);
+  }
+  var handleClass = handle.$$.ptrType.registeredClass;
+  var ptr = upcastPointer(handle.$$.ptr, handleClass, this.registeredClass);
+  return ptr;
+}
+
+/** @suppress {globalThis} */ function genericPointerToWireType(destructors, handle) {
+  var ptr;
+  if (handle === null) {
+    if (this.isReference) {
+      throwBindingError(`null is not a valid ${this.name}`);
+    }
+    if (this.isSmartPointer) {
+      ptr = this.rawConstructor();
+      if (destructors !== null) {
+        destructors.push(this.rawDestructor, ptr);
+      }
+      return ptr;
+    } else {
+      return 0;
+    }
+  }
+  if (!handle || !handle.$$) {
+    throwBindingError(`Cannot pass "${embindRepr(handle)}" as a ${this.name}`);
+  }
+  if (!handle.$$.ptr) {
+    throwBindingError(`Cannot pass deleted object as a pointer of type ${this.name}`);
+  }
+  if (!this.isConst && handle.$$.ptrType.isConst) {
+    throwBindingError(`Cannot convert argument of type ${(handle.$$.smartPtrType ? handle.$$.smartPtrType.name : handle.$$.ptrType.name)} to parameter type ${this.name}`);
+  }
+  var handleClass = handle.$$.ptrType.registeredClass;
+  ptr = upcastPointer(handle.$$.ptr, handleClass, this.registeredClass);
+  if (this.isSmartPointer) {
+    // TODO: this is not strictly true
+    // We could support BY_EMVAL conversions from raw pointers to smart pointers
+    // because the smart pointer can hold a reference to the handle
+    if (undefined === handle.$$.smartPtr) {
+      throwBindingError("Passing raw pointer to smart pointer is illegal");
+    }
+    switch (this.sharingPolicy) {
+     case 0:
+      // NONE
+      // no upcasting
+      if (handle.$$.smartPtrType === this) {
+        ptr = handle.$$.smartPtr;
+      } else {
+        throwBindingError(`Cannot convert argument of type ${(handle.$$.smartPtrType ? handle.$$.smartPtrType.name : handle.$$.ptrType.name)} to parameter type ${this.name}`);
+      }
+      break;
+
+     case 1:
+      // INTRUSIVE
+      ptr = handle.$$.smartPtr;
+      break;
+
+     case 2:
+      // BY_EMVAL
+      if (handle.$$.smartPtrType === this) {
+        ptr = handle.$$.smartPtr;
+      } else {
+        var clonedHandle = handle["clone"]();
+        ptr = this.rawShare(ptr, Emval.toHandle(() => clonedHandle["delete"]()));
+        if (destructors !== null) {
+          destructors.push(this.rawDestructor, ptr);
+        }
+      }
+      break;
+
+     default:
+      throwBindingError("Unsupporting sharing policy");
+    }
+  }
+  return ptr;
+}
+
+/** @suppress {globalThis} */ function nonConstNoSmartPtrRawPointerToWireType(destructors, handle) {
+  if (handle === null) {
+    if (this.isReference) {
+      throwBindingError(`null is not a valid ${this.name}`);
+    }
+    return 0;
+  }
+  if (!handle.$$) {
+    throwBindingError(`Cannot pass "${embindRepr(handle)}" as a ${this.name}`);
+  }
+  if (!handle.$$.ptr) {
+    throwBindingError(`Cannot pass deleted object as a pointer of type ${this.name}`);
+  }
+  if (handle.$$.ptrType.isConst) {
+    throwBindingError(`Cannot convert argument of type ${handle.$$.ptrType.name} to parameter type ${this.name}`);
+  }
+  var handleClass = handle.$$.ptrType.registeredClass;
+  var ptr = upcastPointer(handle.$$.ptr, handleClass, this.registeredClass);
+  return ptr;
+}
+
+/** @suppress {globalThis} */ function readPointer(pointer) {
+  return this.fromWireType(HEAPU32[((pointer) >> 2)]);
+}
+
+var init_RegisteredPointer = () => {
+  Object.assign(RegisteredPointer.prototype, {
+    getPointee(ptr) {
+      if (this.rawGetPointee) {
+        ptr = this.rawGetPointee(ptr);
+      }
+      return ptr;
+    },
+    destructor(ptr) {
+      this.rawDestructor?.(ptr);
+    },
+    readValueFromPointer: readPointer,
+    fromWireType: RegisteredPointer_fromWireType
+  });
+};
+
+/** @constructor
+      @param {*=} pointeeType,
+      @param {*=} sharingPolicy,
+      @param {*=} rawGetPointee,
+      @param {*=} rawConstructor,
+      @param {*=} rawShare,
+      @param {*=} rawDestructor,
+       */ function RegisteredPointer(name, registeredClass, isReference, isConst, // smart pointer properties
+isSmartPointer, pointeeType, sharingPolicy, rawGetPointee, rawConstructor, rawShare, rawDestructor) {
+  this.name = name;
+  this.registeredClass = registeredClass;
+  this.isReference = isReference;
+  this.isConst = isConst;
+  // smart pointer properties
+  this.isSmartPointer = isSmartPointer;
+  this.pointeeType = pointeeType;
+  this.sharingPolicy = sharingPolicy;
+  this.rawGetPointee = rawGetPointee;
+  this.rawConstructor = rawConstructor;
+  this.rawShare = rawShare;
+  this.rawDestructor = rawDestructor;
+  if (!isSmartPointer && registeredClass.baseClass === undefined) {
+    if (isConst) {
+      this.toWireType = constNoSmartPtrRawPointerToWireType;
+      this.destructorFunction = null;
+    } else {
+      this.toWireType = nonConstNoSmartPtrRawPointerToWireType;
+      this.destructorFunction = null;
+    }
+  } else {
+    this.toWireType = genericPointerToWireType;
+  }
+}
+
+/** @param {number=} numArguments */ var replacePublicSymbol = (name, value, numArguments) => {
+  if (!Module.hasOwnProperty(name)) {
+    throwInternalError("Replacing nonexistent public symbol");
+  }
+  // If there's an overload table for this symbol, replace the symbol in the overload table instead.
+  if (undefined !== Module[name].overloadTable && undefined !== numArguments) {
+    Module[name].overloadTable[numArguments] = value;
+  } else {
+    Module[name] = value;
+    Module[name].argCount = numArguments;
+  }
+};
+
+var wasmTableMirror = [];
+
+var getWasmTableEntry = funcPtr => {
+  var func = wasmTableMirror[funcPtr];
+  if (!func) {
+    /** @suppress {checkTypes} */ wasmTableMirror[funcPtr] = func = wasmTable.get(funcPtr);
+  }
+  /** @suppress {checkTypes} */ assert(wasmTable.get(funcPtr) == func, "JavaScript-side Wasm function table mirror is out of date!");
+  return func;
+};
+
+var embind__requireFunction = (signature, rawFunction, isAsync = false) => {
+  assert(!isAsync, "Async bindings are only supported with JSPI.");
+  signature = AsciiToString(signature);
+  function makeDynCaller() {
+    var rtn = getWasmTableEntry(rawFunction);
+    return rtn;
+  }
+  var fp = makeDynCaller();
+  if (typeof fp != "function") {
+    throwBindingError(`unknown function pointer with signature ${signature}: ${rawFunction}`);
+  }
+  return fp;
+};
+
+class UnboundTypeError extends Error {}
+
+var getTypeName = type => {
+  var ptr = ___getTypeName(type);
+  var rv = AsciiToString(ptr);
+  _free(ptr);
+  return rv;
+};
+
+var throwUnboundTypeError = (message, types) => {
+  var unboundTypes = [];
+  var seen = {};
+  function visit(type) {
+    if (seen[type]) {
+      return;
+    }
+    if (registeredTypes[type]) {
+      return;
+    }
+    if (typeDependencies[type]) {
+      typeDependencies[type].forEach(visit);
+      return;
+    }
+    unboundTypes.push(type);
+    seen[type] = true;
+  }
+  types.forEach(visit);
+  throw new UnboundTypeError(`${message}: ` + unboundTypes.map(getTypeName).join([ ", " ]));
+};
+
+var whenDependentTypesAreResolved = (myTypes, dependentTypes, getTypeConverters) => {
+  myTypes.forEach(type => typeDependencies[type] = dependentTypes);
+  function onComplete(typeConverters) {
+    var myTypeConverters = getTypeConverters(typeConverters);
+    if (myTypeConverters.length !== myTypes.length) {
+      throwInternalError("Mismatched type converter count");
+    }
+    for (var i = 0; i < myTypes.length; ++i) {
+      registerType(myTypes[i], myTypeConverters[i]);
+    }
+  }
+  var typeConverters = new Array(dependentTypes.length);
+  var unregisteredTypes = [];
+  var registered = 0;
+  dependentTypes.forEach((dt, i) => {
+    if (registeredTypes.hasOwnProperty(dt)) {
+      typeConverters[i] = registeredTypes[dt];
+    } else {
+      unregisteredTypes.push(dt);
+      if (!awaitingDependencies.hasOwnProperty(dt)) {
+        awaitingDependencies[dt] = [];
+      }
+      awaitingDependencies[dt].push(() => {
+        typeConverters[i] = registeredTypes[dt];
+        ++registered;
+        if (registered === unregisteredTypes.length) {
+          onComplete(typeConverters);
+        }
+      });
+    }
+  });
+  if (0 === unregisteredTypes.length) {
+    onComplete(typeConverters);
+  }
+};
+
+var __embind_register_class = (rawType, rawPointerType, rawConstPointerType, baseClassRawType, getActualTypeSignature, getActualType, upcastSignature, upcast, downcastSignature, downcast, name, destructorSignature, rawDestructor) => {
+  name = AsciiToString(name);
+  getActualType = embind__requireFunction(getActualTypeSignature, getActualType);
+  upcast &&= embind__requireFunction(upcastSignature, upcast);
+  downcast &&= embind__requireFunction(downcastSignature, downcast);
+  rawDestructor = embind__requireFunction(destructorSignature, rawDestructor);
+  var legalFunctionName = makeLegalFunctionName(name);
+  exposePublicSymbol(legalFunctionName, function() {
+    // this code cannot run if baseClassRawType is zero
+    throwUnboundTypeError(`Cannot construct ${name} due to unbound types`, [ baseClassRawType ]);
+  });
+  whenDependentTypesAreResolved([ rawType, rawPointerType, rawConstPointerType ], baseClassRawType ? [ baseClassRawType ] : [], base => {
+    base = base[0];
+    var baseClass;
+    var basePrototype;
+    if (baseClassRawType) {
+      baseClass = base.registeredClass;
+      basePrototype = baseClass.instancePrototype;
+    } else {
+      basePrototype = ClassHandle.prototype;
+    }
+    var constructor = createNamedFunction(name, function(...args) {
+      if (Object.getPrototypeOf(this) !== instancePrototype) {
+        throw new BindingError(`Use 'new' to construct ${name}`);
+      }
+      if (undefined === registeredClass.constructor_body) {
+        throw new BindingError(`${name} has no accessible constructor`);
+      }
+      var body = registeredClass.constructor_body[args.length];
+      if (undefined === body) {
+        throw new BindingError(`Tried to invoke ctor of ${name} with invalid number of parameters (${args.length}) - expected (${Object.keys(registeredClass.constructor_body).toString()}) parameters instead!`);
+      }
+      return body.apply(this, args);
+    });
+    var instancePrototype = Object.create(basePrototype, {
+      constructor: {
+        value: constructor
+      }
+    });
+    constructor.prototype = instancePrototype;
+    var registeredClass = new RegisteredClass(name, constructor, instancePrototype, rawDestructor, baseClass, getActualType, upcast, downcast);
+    if (registeredClass.baseClass) {
+      // Keep track of class hierarchy. Used to allow sub-classes to inherit class functions.
+      registeredClass.baseClass.__derivedClasses ??= [];
+      registeredClass.baseClass.__derivedClasses.push(registeredClass);
+    }
+    var referenceConverter = new RegisteredPointer(name, registeredClass, true, false, false);
+    var pointerConverter = new RegisteredPointer(name + "*", registeredClass, false, false, false);
+    var constPointerConverter = new RegisteredPointer(name + " const*", registeredClass, false, true, false);
+    registeredPointers[rawType] = {
+      pointerType: pointerConverter,
+      constPointerType: constPointerConverter
+    };
+    replacePublicSymbol(legalFunctionName, constructor);
+    return [ referenceConverter, pointerConverter, constPointerConverter ];
+  });
+};
+
+var heap32VectorToArray = (count, firstElement) => {
+  var array = [];
+  for (var i = 0; i < count; i++) {
+    // TODO(https://github.com/emscripten-core/emscripten/issues/17310):
+    // Find a way to hoist the `>> 2` or `>> 3` out of this loop.
+    array.push(HEAPU32[(((firstElement) + (i * 4)) >> 2)]);
+  }
+  return array;
+};
+
+var runDestructors = destructors => {
+  while (destructors.length) {
+    var ptr = destructors.pop();
+    var del = destructors.pop();
+    del(ptr);
+  }
+};
+
+function usesDestructorStack(argTypes) {
+  // Skip return value at index 0 - it's not deleted here.
+  for (var i = 1; i < argTypes.length; ++i) {
+    // The type does not define a destructor function - must use dynamic stack
+    if (argTypes[i] !== null && argTypes[i].destructorFunction === undefined) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function checkArgCount(numArgs, minArgs, maxArgs, humanName, throwBindingError) {
+  if (numArgs < minArgs || numArgs > maxArgs) {
+    var argCountMessage = minArgs == maxArgs ? minArgs : `${minArgs} to ${maxArgs}`;
+    throwBindingError(`function ${humanName} called with ${numArgs} arguments, expected ${argCountMessage}`);
+  }
+}
+
+function createJsInvoker(argTypes, isClassMethodFunc, returns, isAsync) {
+  var needsDestructorStack = usesDestructorStack(argTypes);
+  var argCount = argTypes.length - 2;
+  var argsList = [];
+  var argsListWired = [ "fn" ];
+  if (isClassMethodFunc) {
+    argsListWired.push("thisWired");
+  }
+  for (var i = 0; i < argCount; ++i) {
+    argsList.push(`arg${i}`);
+    argsListWired.push(`arg${i}Wired`);
+  }
+  argsList = argsList.join(",");
+  argsListWired = argsListWired.join(",");
+  var invokerFnBody = `return function (${argsList}) {\n`;
+  invokerFnBody += "checkArgCount(arguments.length, minArgs, maxArgs, humanName, throwBindingError);\n";
+  if (needsDestructorStack) {
+    invokerFnBody += "var destructors = [];\n";
+  }
+  var dtorStack = needsDestructorStack ? "destructors" : "null";
+  var args1 = [ "humanName", "throwBindingError", "invoker", "fn", "runDestructors", "fromRetWire", "toClassParamWire" ];
+  if (isClassMethodFunc) {
+    invokerFnBody += `var thisWired = toClassParamWire(${dtorStack}, this);\n`;
+  }
+  for (var i = 0; i < argCount; ++i) {
+    var argName = `toArg${i}Wire`;
+    invokerFnBody += `var arg${i}Wired = ${argName}(${dtorStack}, arg${i});\n`;
+    args1.push(argName);
+  }
+  invokerFnBody += (returns || isAsync ? "var rv = " : "") + `invoker(${argsListWired});\n`;
+  if (needsDestructorStack) {
+    invokerFnBody += "runDestructors(destructors);\n";
+  } else {
+    for (var i = isClassMethodFunc ? 1 : 2; i < argTypes.length; ++i) {
+      // Skip return value at index 0 - it's not deleted here. Also skip class type if not a method.
+      var paramName = (i === 1 ? "thisWired" : ("arg" + (i - 2) + "Wired"));
+      if (argTypes[i].destructorFunction !== null) {
+        invokerFnBody += `${paramName}_dtor(${paramName});\n`;
+        args1.push(`${paramName}_dtor`);
+      }
+    }
+  }
+  if (returns) {
+    invokerFnBody += "var ret = fromRetWire(rv);\n" + "return ret;\n";
+  } else {}
+  invokerFnBody += "}\n";
+  args1.push("checkArgCount", "minArgs", "maxArgs");
+  invokerFnBody = `if (arguments.length !== ${args1.length}){ throw new Error(humanName + "Expected ${args1.length} closure arguments " + arguments.length + " given."); }\n${invokerFnBody}`;
+  return new Function(args1, invokerFnBody);
+}
+
+function getRequiredArgCount(argTypes) {
+  var requiredArgCount = argTypes.length - 2;
+  for (var i = argTypes.length - 1; i >= 2; --i) {
+    if (!argTypes[i].optional) {
+      break;
+    }
+    requiredArgCount--;
+  }
+  return requiredArgCount;
+}
+
+function craftInvokerFunction(humanName, argTypes, classType, cppInvokerFunc, cppTargetFunc, /** boolean= */ isAsync) {
+  // humanName: a human-readable string name for the function to be generated.
+  // argTypes: An array that contains the embind type objects for all types in the function signature.
+  //    argTypes[0] is the type object for the function return value.
+  //    argTypes[1] is the type object for function this object/class type, or null if not crafting an invoker for a class method.
+  //    argTypes[2...] are the actual function parameters.
+  // classType: The embind type object for the class to be bound, or null if this is not a method of a class.
+  // cppInvokerFunc: JS Function object to the C++-side function that interops into C++ code.
+  // cppTargetFunc: Function pointer (an integer to FUNCTION_TABLE) to the target C++ function the cppInvokerFunc will end up calling.
+  // isAsync: Optional. If true, returns an async function. Async bindings are only supported with JSPI.
+  var argCount = argTypes.length;
+  if (argCount < 2) {
+    throwBindingError("argTypes array size mismatch! Must at least get return value and 'this' types!");
+  }
+  assert(!isAsync, "Async bindings are only supported with JSPI.");
+  var isClassMethodFunc = (argTypes[1] !== null && classType !== null);
+  // Free functions with signature "void function()" do not need an invoker that marshalls between wire types.
+  // TODO: This omits argument count check - enable only at -O3 or similar.
+  //    if (ENABLE_UNSAFE_OPTS && argCount == 2 && argTypes[0].name == "void" && !isClassMethodFunc) {
+  //       return FUNCTION_TABLE[fn];
+  //    }
+  // Determine if we need to use a dynamic stack to store the destructors for the function parameters.
+  // TODO: Remove this completely once all function invokers are being dynamically generated.
+  var needsDestructorStack = usesDestructorStack(argTypes);
+  var returns = !argTypes[0].isVoid;
+  var expectedArgCount = argCount - 2;
+  var minArgs = getRequiredArgCount(argTypes);
+  // Builld the arguments that will be passed into the closure around the invoker
+  // function.
+  var retType = argTypes[0];
+  var instType = argTypes[1];
+  var closureArgs = [ humanName, throwBindingError, cppInvokerFunc, cppTargetFunc, runDestructors, retType.fromWireType.bind(retType), instType?.toWireType.bind(instType) ];
+  for (var i = 2; i < argCount; ++i) {
+    var argType = argTypes[i];
+    closureArgs.push(argType.toWireType.bind(argType));
+  }
+  if (!needsDestructorStack) {
+    // Skip return value at index 0 - it's not deleted here. Also skip class type if not a method.
+    for (var i = isClassMethodFunc ? 1 : 2; i < argTypes.length; ++i) {
+      if (argTypes[i].destructorFunction !== null) {
+        closureArgs.push(argTypes[i].destructorFunction);
+      }
+    }
+  }
+  closureArgs.push(checkArgCount, minArgs, expectedArgCount);
+  let invokerFactory = createJsInvoker(argTypes, isClassMethodFunc, returns, isAsync);
+  var invokerFn = invokerFactory(...closureArgs);
+  return createNamedFunction(humanName, invokerFn);
+}
+
+var __embind_register_class_constructor = (rawClassType, argCount, rawArgTypesAddr, invokerSignature, invoker, rawConstructor) => {
+  assert(argCount > 0);
+  var rawArgTypes = heap32VectorToArray(argCount, rawArgTypesAddr);
+  invoker = embind__requireFunction(invokerSignature, invoker);
+  whenDependentTypesAreResolved([], [ rawClassType ], classType => {
+    classType = classType[0];
+    var humanName = `constructor ${classType.name}`;
+    if (undefined === classType.registeredClass.constructor_body) {
+      classType.registeredClass.constructor_body = [];
+    }
+    if (undefined !== classType.registeredClass.constructor_body[argCount - 1]) {
+      throw new BindingError(`Cannot register multiple constructors with identical number of parameters (${argCount - 1}) for class '${classType.name}'! Overload resolution is currently only performed using the parameter count, not actual type info!`);
+    }
+    classType.registeredClass.constructor_body[argCount - 1] = () => {
+      throwUnboundTypeError(`Cannot construct ${classType.name} due to unbound types`, rawArgTypes);
+    };
+    whenDependentTypesAreResolved([], rawArgTypes, argTypes => {
+      // Insert empty slot for context type (argTypes[1]).
+      argTypes.splice(1, 0, null);
+      classType.registeredClass.constructor_body[argCount - 1] = craftInvokerFunction(humanName, argTypes, null, invoker, rawConstructor);
+      return [];
+    });
+    return [];
+  });
+};
+
+var getFunctionName = signature => {
+  signature = signature.trim();
+  const argsIndex = signature.indexOf("(");
+  if (argsIndex === -1) return signature;
+  assert(signature.endsWith(")"), "Parentheses for argument names should match.");
+  return signature.slice(0, argsIndex);
+};
+
+var __embind_register_class_function = (rawClassType, methodName, argCount, rawArgTypesAddr, // [ReturnType, ThisType, Args...]
+invokerSignature, rawInvoker, context, isPureVirtual, isAsync, isNonnullReturn) => {
+  var rawArgTypes = heap32VectorToArray(argCount, rawArgTypesAddr);
+  methodName = AsciiToString(methodName);
+  methodName = getFunctionName(methodName);
+  rawInvoker = embind__requireFunction(invokerSignature, rawInvoker, isAsync);
+  whenDependentTypesAreResolved([], [ rawClassType ], classType => {
+    classType = classType[0];
+    var humanName = `${classType.name}.${methodName}`;
+    if (methodName.startsWith("@@")) {
+      methodName = Symbol[methodName.substring(2)];
+    }
+    if (isPureVirtual) {
+      classType.registeredClass.pureVirtualFunctions.push(methodName);
+    }
+    function unboundTypesHandler() {
+      throwUnboundTypeError(`Cannot call ${humanName} due to unbound types`, rawArgTypes);
+    }
+    var proto = classType.registeredClass.instancePrototype;
+    var method = proto[methodName];
+    if (undefined === method || (undefined === method.overloadTable && method.className !== classType.name && method.argCount === argCount - 2)) {
+      // This is the first overload to be registered, OR we are replacing a
+      // function in the base class with a function in the derived class.
+      unboundTypesHandler.argCount = argCount - 2;
+      unboundTypesHandler.className = classType.name;
+      proto[methodName] = unboundTypesHandler;
+    } else {
+      // There was an existing function with the same name registered. Set up
+      // a function overload routing table.
+      ensureOverloadTable(proto, methodName, humanName);
+      proto[methodName].overloadTable[argCount - 2] = unboundTypesHandler;
+    }
+    whenDependentTypesAreResolved([], rawArgTypes, argTypes => {
+      var memberFunction = craftInvokerFunction(humanName, argTypes, classType, rawInvoker, context, isAsync);
+      // Replace the initial unbound-handler-stub function with the
+      // appropriate member function, now that all types are resolved. If
+      // multiple overloads are registered for this function, the function
+      // goes into an overload table.
+      if (undefined === proto[methodName].overloadTable) {
+        // Set argCount in case an overload is registered later
+        memberFunction.argCount = argCount - 2;
+        proto[methodName] = memberFunction;
+      } else {
+        proto[methodName].overloadTable[argCount - 2] = memberFunction;
+      }
+      return [];
+    });
+    return [];
+  });
+};
+
+var __embind_register_constant = (name, type, value) => {
+  name = AsciiToString(name);
+  whenDependentTypesAreResolved([], [ type ], type => {
+    type = type[0];
+    Module[name] = type.fromWireType(value);
+    return [];
+  });
+};
+
+var emval_freelist = [];
+
+var emval_handles = [ 0, 1, , 1, null, 1, true, 1, false, 1 ];
+
+var __emval_decref = handle => {
+  if (handle > 9 && 0 === --emval_handles[handle + 1]) {
+    assert(emval_handles[handle] !== undefined, `Decref for unallocated handle.`);
+    emval_handles[handle] = undefined;
+    emval_freelist.push(handle);
+  }
+};
+
+var Emval = {
+  toValue: handle => {
+    if (!handle) {
+      throwBindingError(`Cannot use deleted val. handle = ${handle}`);
+    }
+    // handle 2 is supposed to be `undefined`.
+    assert(handle === 2 || emval_handles[handle] !== undefined && handle % 2 === 0, `invalid handle: ${handle}`);
+    return emval_handles[handle];
+  },
+  toHandle: value => {
+    switch (value) {
+     case undefined:
+      return 2;
+
+     case null:
+      return 4;
+
+     case true:
+      return 6;
+
+     case false:
+      return 8;
+
+     default:
+      {
+        const handle = emval_freelist.pop() || emval_handles.length;
+        emval_handles[handle] = value;
+        emval_handles[handle + 1] = 1;
+        return handle;
+      }
+    }
+  }
+};
+
+var EmValType = {
+  name: "emscripten::val",
+  fromWireType: handle => {
+    var rv = Emval.toValue(handle);
+    __emval_decref(handle);
+    return rv;
+  },
+  toWireType: (destructors, value) => Emval.toHandle(value),
+  readValueFromPointer: readPointer,
+  destructorFunction: null
+};
+
+var __embind_register_emval = rawType => registerType(rawType, EmValType);
+
+var floatReadValueFromPointer = (name, width) => {
+  switch (width) {
+   case 4:
+    return function(pointer) {
+      return this.fromWireType(HEAPF32[((pointer) >> 2)]);
+    };
+
+   case 8:
+    return function(pointer) {
+      return this.fromWireType(HEAPF64[((pointer) >> 3)]);
+    };
+
+   default:
+    throw new TypeError(`invalid float width (${width}): ${name}`);
+  }
+};
+
+var __embind_register_float = (rawType, name, size) => {
+  name = AsciiToString(name);
+  registerType(rawType, {
+    name,
+    fromWireType: value => value,
+    toWireType: (destructors, value) => {
+      if (typeof value != "number" && typeof value != "boolean") {
+        throw new TypeError(`Cannot convert ${embindRepr(value)} to ${this.name}`);
+      }
+      // The VM will perform JS to Wasm value conversion, according to the spec:
+      // https://www.w3.org/TR/wasm-js-api-1/#towebassemblyvalue
+      return value;
+    },
+    readValueFromPointer: floatReadValueFromPointer(name, size),
+    destructorFunction: null
+  });
+};
+
+/** @suppress {globalThis} */ var __embind_register_integer = (primitiveType, name, size, minRange, maxRange) => {
+  name = AsciiToString(name);
+  const isUnsignedType = minRange === 0;
+  let fromWireType = value => value;
+  if (isUnsignedType) {
+    var bitshift = 32 - 8 * size;
+    fromWireType = value => (value << bitshift) >>> bitshift;
+    maxRange = fromWireType(maxRange);
+  }
+  registerType(primitiveType, {
+    name,
+    fromWireType,
+    toWireType: (destructors, value) => {
+      if (typeof value != "number" && typeof value != "boolean") {
+        throw new TypeError(`Cannot convert "${embindRepr(value)}" to ${name}`);
+      }
+      assertIntegerRange(name, value, minRange, maxRange);
+      // The VM will perform JS to Wasm value conversion, according to the spec:
+      // https://www.w3.org/TR/wasm-js-api-1/#towebassemblyvalue
+      return value;
+    },
+    readValueFromPointer: integerReadValueFromPointer(name, size, minRange !== 0),
+    destructorFunction: null
+  });
+};
+
+var __embind_register_memory_view = (rawType, dataTypeIndex, name) => {
+  var typeMapping = [ Int8Array, Uint8Array, Int16Array, Uint16Array, Int32Array, Uint32Array, Float32Array, Float64Array, BigInt64Array, BigUint64Array ];
+  var TA = typeMapping[dataTypeIndex];
+  function decodeMemoryView(handle) {
+    var size = HEAPU32[((handle) >> 2)];
+    var data = HEAPU32[(((handle) + (4)) >> 2)];
+    return new TA(HEAP8.buffer, data, size);
+  }
+  name = AsciiToString(name);
+  registerType(rawType, {
+    name,
+    fromWireType: decodeMemoryView,
+    readValueFromPointer: decodeMemoryView
+  }, {
+    ignoreDuplicateRegistrations: true
+  });
+};
+
+var stringToUTF8 = (str, outPtr, maxBytesToWrite) => {
+  assert(typeof maxBytesToWrite == "number", "stringToUTF8(str, outPtr, maxBytesToWrite) is missing the third parameter that specifies the length of the output buffer!");
+  return stringToUTF8Array(str, HEAPU8, outPtr, maxBytesToWrite);
+};
+
+var __embind_register_std_string = (rawType, name) => {
+  name = AsciiToString(name);
+  var stdStringIsUTF8 = true;
+  registerType(rawType, {
+    name,
+    // For some method names we use string keys here since they are part of
+    // the public/external API and/or used by the runtime-generated code.
+    fromWireType(value) {
+      var length = HEAPU32[((value) >> 2)];
+      var payload = value + 4;
+      var str;
+      if (stdStringIsUTF8) {
+        str = UTF8ToString(payload, length, true);
+      } else {
+        str = "";
+        for (var i = 0; i < length; ++i) {
+          str += String.fromCharCode(HEAPU8[payload + i]);
+        }
+      }
+      _free(value);
+      return str;
+    },
+    toWireType(destructors, value) {
+      if (value instanceof ArrayBuffer) {
+        value = new Uint8Array(value);
+      }
+      var length;
+      var valueIsOfTypeString = (typeof value == "string");
+      // We accept `string` or array views with single byte elements
+      if (!(valueIsOfTypeString || (ArrayBuffer.isView(value) && value.BYTES_PER_ELEMENT == 1))) {
+        throwBindingError("Cannot pass non-string to std::string");
+      }
+      if (stdStringIsUTF8 && valueIsOfTypeString) {
+        length = lengthBytesUTF8(value);
+      } else {
+        length = value.length;
+      }
+      // assumes POINTER_SIZE alignment
+      var base = _malloc(4 + length + 1);
+      var ptr = base + 4;
+      HEAPU32[((base) >> 2)] = length;
+      if (valueIsOfTypeString) {
+        if (stdStringIsUTF8) {
+          stringToUTF8(value, ptr, length + 1);
+        } else {
+          for (var i = 0; i < length; ++i) {
+            var charCode = value.charCodeAt(i);
+            if (charCode > 255) {
+              _free(base);
+              throwBindingError("String has UTF-16 code units that do not fit in 8 bits");
+            }
+            HEAPU8[ptr + i] = charCode;
+          }
+        }
+      } else {
+        HEAPU8.set(value, ptr);
+      }
+      if (destructors !== null) {
+        destructors.push(_free, base);
+      }
+      return base;
+    },
+    readValueFromPointer: readPointer,
+    destructorFunction(ptr) {
+      _free(ptr);
+    }
+  });
+};
+
+var UTF16Decoder = globalThis.TextDecoder ? new TextDecoder("utf-16le") : undefined;
+
+var UTF16ToString = (ptr, maxBytesToRead, ignoreNul) => {
+  assert(ptr % 2 == 0, "Pointer passed to UTF16ToString must be aligned to two bytes!");
+  var idx = ((ptr) >> 1);
+  var endIdx = findStringEnd(HEAPU16, idx, maxBytesToRead / 2, ignoreNul);
+  // When using conditional TextDecoder, skip it for short strings as the overhead of the native call is not worth it.
+  if (endIdx - idx > 16 && UTF16Decoder) return UTF16Decoder.decode(HEAPU16.subarray(idx, endIdx));
+  // Fallback: decode without UTF16Decoder
+  var str = "";
+  // If maxBytesToRead is not passed explicitly, it will be undefined, and the
+  // for-loop's condition will always evaluate to true. The loop is then
+  // terminated on the first null char.
+  for (var i = idx; i < endIdx; ++i) {
+    var codeUnit = HEAPU16[i];
+    // fromCharCode constructs a character from a UTF-16 code unit, so we can
+    // pass the UTF16 string right through.
+    str += String.fromCharCode(codeUnit);
+  }
+  return str;
+};
+
+var stringToUTF16 = (str, outPtr, maxBytesToWrite) => {
+  assert(outPtr % 2 == 0, "Pointer passed to stringToUTF16 must be aligned to two bytes!");
+  assert(typeof maxBytesToWrite == "number", "stringToUTF16(str, outPtr, maxBytesToWrite) is missing the third parameter that specifies the length of the output buffer!");
+  // Backwards compatibility: if max bytes is not specified, assume unsafe unbounded write is allowed.
+  maxBytesToWrite ??= 2147483647;
+  if (maxBytesToWrite < 2) return 0;
+  maxBytesToWrite -= 2;
+  // Null terminator.
+  var startPtr = outPtr;
+  var numCharsToWrite = (maxBytesToWrite < str.length * 2) ? (maxBytesToWrite / 2) : str.length;
+  for (var i = 0; i < numCharsToWrite; ++i) {
+    // charCodeAt returns a UTF-16 encoded code unit, so it can be directly written to the HEAP.
+    var codeUnit = str.charCodeAt(i);
+    // possibly a lead surrogate
+    HEAP16[((outPtr) >> 1)] = codeUnit;
+    outPtr += 2;
+  }
+  // Null-terminate the pointer to the HEAP.
+  HEAP16[((outPtr) >> 1)] = 0;
+  return outPtr - startPtr;
+};
+
+var lengthBytesUTF16 = str => str.length * 2;
+
+var UTF32ToString = (ptr, maxBytesToRead, ignoreNul) => {
+  assert(ptr % 4 == 0, "Pointer passed to UTF32ToString must be aligned to four bytes!");
+  var str = "";
+  var startIdx = ((ptr) >> 2);
+  // If maxBytesToRead is not passed explicitly, it will be undefined, and this
+  // will always evaluate to true. This saves on code size.
+  for (var i = 0; !(i >= maxBytesToRead / 4); i++) {
+    var utf32 = HEAPU32[startIdx + i];
+    if (!utf32 && !ignoreNul) break;
+    str += String.fromCodePoint(utf32);
+  }
+  return str;
+};
+
+var stringToUTF32 = (str, outPtr, maxBytesToWrite) => {
+  assert(outPtr % 4 == 0, "Pointer passed to stringToUTF32 must be aligned to four bytes!");
+  assert(typeof maxBytesToWrite == "number", "stringToUTF32(str, outPtr, maxBytesToWrite) is missing the third parameter that specifies the length of the output buffer!");
+  // Backwards compatibility: if max bytes is not specified, assume unsafe unbounded write is allowed.
+  maxBytesToWrite ??= 2147483647;
+  if (maxBytesToWrite < 4) return 0;
+  var startPtr = outPtr;
+  var endPtr = startPtr + maxBytesToWrite - 4;
+  for (var i = 0; i < str.length; ++i) {
+    var codePoint = str.codePointAt(i);
+    // Gotcha: if codePoint is over 0xFFFF, it is represented as a surrogate pair in UTF-16.
+    // We need to manually skip over the second code unit for correct iteration.
+    if (codePoint > 65535) {
+      i++;
+    }
+    HEAP32[((outPtr) >> 2)] = codePoint;
+    outPtr += 4;
+    if (outPtr + 4 > endPtr) break;
+  }
+  // Null-terminate the pointer to the HEAP.
+  HEAP32[((outPtr) >> 2)] = 0;
+  return outPtr - startPtr;
+};
+
+var lengthBytesUTF32 = str => {
+  var len = 0;
+  for (var i = 0; i < str.length; ++i) {
+    var codePoint = str.codePointAt(i);
+    // Gotcha: if codePoint is over 0xFFFF, it is represented as a surrogate pair in UTF-16.
+    // We need to manually skip over the second code unit for correct iteration.
+    if (codePoint > 65535) {
+      i++;
+    }
+    len += 4;
+  }
+  return len;
+};
+
+var __embind_register_std_wstring = (rawType, charSize, name) => {
+  name = AsciiToString(name);
+  var decodeString, encodeString, lengthBytesUTF;
+  if (charSize === 2) {
+    decodeString = UTF16ToString;
+    encodeString = stringToUTF16;
+    lengthBytesUTF = lengthBytesUTF16;
+  } else {
+    assert(charSize === 4, "only 2-byte and 4-byte strings are currently supported");
+    decodeString = UTF32ToString;
+    encodeString = stringToUTF32;
+    lengthBytesUTF = lengthBytesUTF32;
+  }
+  registerType(rawType, {
+    name,
+    fromWireType: value => {
+      // Code mostly taken from _embind_register_std_string fromWireType
+      var length = HEAPU32[((value) >> 2)];
+      var str = decodeString(value + 4, length * charSize, true);
+      _free(value);
+      return str;
+    },
+    toWireType: (destructors, value) => {
+      if (!(typeof value == "string")) {
+        throwBindingError(`Cannot pass non-string to C++ string type ${name}`);
+      }
+      // assumes POINTER_SIZE alignment
+      var length = lengthBytesUTF(value);
+      var ptr = _malloc(4 + length + charSize);
+      HEAPU32[((ptr) >> 2)] = length / charSize;
+      encodeString(value, ptr + 4, length + charSize);
+      if (destructors !== null) {
+        destructors.push(_free, ptr);
+      }
+      return ptr;
+    },
+    readValueFromPointer: readPointer,
+    destructorFunction(ptr) {
+      _free(ptr);
+    }
+  });
+};
+
+var __embind_register_void = (rawType, name) => {
+  name = AsciiToString(name);
+  registerType(rawType, {
+    isVoid: true,
+    // void return values can be optimized out sometimes
+    name,
+    fromWireType: () => undefined,
+    // TODO: assert if anything else is given?
+    toWireType: (destructors, o) => undefined
+  });
+};
+
+var __emval_array_to_memory_view = (dst, src) => {
+  dst = Emval.toValue(dst);
+  src = Emval.toValue(src);
+  dst.set(src);
+};
+
+var emval_methodCallers = [];
+
+var emval_addMethodCaller = caller => {
+  var id = emval_methodCallers.length;
+  emval_methodCallers.push(caller);
+  return id;
+};
+
+var requireRegisteredType = (rawType, humanName) => {
+  var impl = registeredTypes[rawType];
+  if (undefined === impl) {
+    throwBindingError(`${humanName} has unknown type ${getTypeName(rawType)}`);
+  }
+  return impl;
+};
+
+var emval_lookupTypes = (argCount, argTypes) => {
+  var a = new Array(argCount);
+  for (var i = 0; i < argCount; ++i) {
+    a[i] = requireRegisteredType(HEAPU32[(((argTypes) + (i * 4)) >> 2)], `parameter ${i}`);
+  }
+  return a;
+};
+
+var emval_returnValue = (toReturnWire, destructorsRef, handle) => {
+  var destructors = [];
+  var result = toReturnWire(destructors, handle);
+  if (destructors.length) {
+    // void, primitives and any other types w/o destructors don't need to allocate a handle
+    HEAPU32[((destructorsRef) >> 2)] = Emval.toHandle(destructors);
+  }
+  return result;
+};
+
+var emval_symbols = {};
+
+var getStringOrSymbol = address => {
+  var symbol = emval_symbols[address];
+  if (symbol === undefined) {
+    return AsciiToString(address);
+  }
+  return symbol;
+};
+
+var __emval_create_invoker = (argCount, argTypesPtr, kind) => {
+  var GenericWireTypeSize = 8;
+  var [retType, ...argTypes] = emval_lookupTypes(argCount, argTypesPtr);
+  var toReturnWire = retType.toWireType.bind(retType);
+  var argFromPtr = argTypes.map(type => type.readValueFromPointer.bind(type));
+  argCount--;
+  // remove the extracted return type
+  var captures = {
+    "toValue": Emval.toValue
+  };
+  var args = argFromPtr.map((argFromPtr, i) => {
+    var captureName = `argFromPtr${i}`;
+    captures[captureName] = argFromPtr;
+    return `${captureName}(args${i ? "+" + i * GenericWireTypeSize : ""})`;
+  });
+  var functionBody;
+  switch (kind) {
+   case 0:
+    functionBody = "toValue(handle)";
+    break;
+
+   case 2:
+    functionBody = "new (toValue(handle))";
+    break;
+
+   case 3:
+    functionBody = "";
+    break;
+
+   case 1:
+    captures["getStringOrSymbol"] = getStringOrSymbol;
+    functionBody = "toValue(handle)[getStringOrSymbol(methodName)]";
+    break;
+  }
+  functionBody += `(${args})`;
+  if (!retType.isVoid) {
+    captures["toReturnWire"] = toReturnWire;
+    captures["emval_returnValue"] = emval_returnValue;
+    functionBody = `return emval_returnValue(toReturnWire, destructorsRef, ${functionBody})`;
+  }
+  functionBody = `return function (handle, methodName, destructorsRef, args) {\n  ${functionBody}\n  }`;
+  var invokerFunction = new Function(Object.keys(captures), functionBody)(...Object.values(captures));
+  var functionName = `methodCaller<(${argTypes.map(t => t.name)}) => ${retType.name}>`;
+  return emval_addMethodCaller(createNamedFunction(functionName, invokerFunction));
+};
+
+var __emval_get_property = (handle, key) => {
+  handle = Emval.toValue(handle);
+  key = Emval.toValue(key);
+  return Emval.toHandle(handle[key]);
+};
+
+var __emval_incref = handle => {
+  if (handle > 9) {
+    emval_handles[handle + 1] += 1;
+  }
+};
+
+var __emval_invoke = (caller, handle, methodName, destructorsRef, args) => emval_methodCallers[caller](handle, methodName, destructorsRef, args);
+
+var __emval_new_array = () => Emval.toHandle([]);
+
+var __emval_new_cstring = v => Emval.toHandle(getStringOrSymbol(v));
+
+var __emval_new_object = () => Emval.toHandle({});
+
+var __emval_run_destructors = handle => {
+  var destructors = Emval.toValue(handle);
+  runDestructors(destructors);
+  __emval_decref(handle);
+};
+
+var __emval_set_property = (handle, key, value) => {
+  handle = Emval.toValue(handle);
+  key = Emval.toValue(key);
+  value = Emval.toValue(value);
+  handle[key] = value;
+};
+
+var readEmAsmArgsArray = [];
+
+var readEmAsmArgs = (sigPtr, buf) => {
+  // Nobody should have mutated _readEmAsmArgsArray underneath us to be something else than an array.
+  assert(Array.isArray(readEmAsmArgsArray));
+  // The input buffer is allocated on the stack, so it must be stack-aligned.
+  assert(buf % 16 == 0);
+  readEmAsmArgsArray.length = 0;
+  var ch;
+  // Most arguments are i32s, so shift the buffer pointer so it is a plain
+  // index into HEAP32.
+  while (ch = HEAPU8[sigPtr++]) {
+    var chr = String.fromCharCode(ch);
+    var validChars = [ "d", "f", "i", "p" ];
+    // In WASM_BIGINT mode we support passing i64 values as bigint.
+    validChars.push("j");
+    assert(validChars.includes(chr), `Invalid character ${ch}("${chr}") in readEmAsmArgs! Use only [${validChars}], and do not specify "v" for void return argument.`);
+    // Floats are always passed as doubles, so all types except for 'i'
+    // are 8 bytes and require alignment.
+    var wide = (ch != 105);
+    wide &= (ch != 112);
+    buf += wide && (buf % 8) ? 4 : 0;
+    readEmAsmArgsArray.push(// Special case for pointers under wasm64 or CAN_ADDRESS_2GB mode.
+    ch == 112 ? HEAPU32[((buf) >> 2)] : ch == 106 ? HEAP64[((buf) >> 3)] : ch == 105 ? HEAP32[((buf) >> 2)] : HEAPF64[((buf) >> 3)]);
+    buf += wide ? 8 : 4;
+  }
+  return readEmAsmArgsArray;
+};
+
+var runEmAsmFunction = (code, sigPtr, argbuf) => {
+  var args = readEmAsmArgs(sigPtr, argbuf);
+  assert(ASM_CONSTS.hasOwnProperty(code), `No EM_ASM constant found at address ${code}.  The loaded WebAssembly file is likely out of sync with the generated JavaScript.`);
+  return ASM_CONSTS[code](...args);
+};
+
+var _emscripten_asm_const_int = (code, sigPtr, argbuf) => runEmAsmFunction(code, sigPtr, argbuf);
+
 var _emscripten_console_error = str => {
   assert(typeof str == "number");
   console.error(UTF8ToString(str));
@@ -3863,19 +5479,6 @@ function _fd_write(fd, iov, iovcnt, pnum) {
   }
 }
 
-var onInits = [];
-
-var wasmTableMirror = [];
-
-var getWasmTableEntry = funcPtr => {
-  var func = wasmTableMirror[funcPtr];
-  if (!func) {
-    /** @suppress {checkTypes} */ wasmTableMirror[funcPtr] = func = wasmTable.get(funcPtr);
-  }
-  /** @suppress {checkTypes} */ assert(wasmTable.get(funcPtr) == func, "JavaScript-side Wasm function table mirror is out of date!");
-  return func;
-};
-
 var incrementExceptionRefcount = ptr => ___cxa_increment_exception_refcount(ptr);
 
 var decrementExceptionRefcount = ptr => ___cxa_decrement_exception_refcount(ptr);
@@ -3907,6 +5510,12 @@ FS.createPreloadedFile = FS_createPreloadedFile;
 FS.preloadFile = FS_preloadFile;
 
 FS.staticInit();
+
+init_ClassHandle();
+
+init_RegisteredPointer();
+
+assert(emval_handles.length === 5 * 2);
 
 // End JS library code
 // include: postlibrary.js
@@ -3950,11 +5559,11 @@ FS.staticInit();
 // Begin runtime exports
 Module["FS"] = FS;
 
-var missingLibrarySymbols = [ "writeI53ToI64", "writeI53ToI64Clamped", "writeI53ToI64Signaling", "writeI53ToU64Clamped", "writeI53ToU64Signaling", "readI53FromI64", "readI53FromU64", "convertI32PairToI53", "convertI32PairToI53Checked", "convertU32PairToI53", "getTempRet0", "createNamedFunction", "zeroMemory", "withStackSave", "inetPton4", "inetNtop4", "inetPton6", "inetNtop6", "readSockaddr", "writeSockaddr", "readEmAsmArgs", "jstoi_q", "getExecutableName", "autoResumeAudioContext", "getDynCaller", "dynCall", "handleException", "runtimeKeepalivePush", "runtimeKeepalivePop", "callUserCallback", "maybeExit", "asmjsMangle", "HandleAllocator", "addOnPostCtor", "addOnPreMain", "addOnExit", "STACK_SIZE", "STACK_ALIGN", "POINTER_SIZE", "ASSERTIONS", "ccall", "cwrap", "convertJsFunctionToWasm", "getEmptyTableSlot", "updateTableMap", "getFunctionAddress", "addFunction", "removeFunction", "stringToUTF8", "intArrayToString", "AsciiToString", "stringToAscii", "UTF16ToString", "stringToUTF16", "lengthBytesUTF16", "UTF32ToString", "stringToUTF32", "lengthBytesUTF32", "stringToNewUTF8", "stringToUTF8OnStack", "writeArrayToMemory", "registerKeyEventCallback", "maybeCStringToJsString", "findEventTarget", "getBoundingClientRect", "fillMouseEventData", "registerMouseEventCallback", "registerWheelEventCallback", "registerUiEventCallback", "registerFocusEventCallback", "fillDeviceOrientationEventData", "registerDeviceOrientationEventCallback", "fillDeviceMotionEventData", "registerDeviceMotionEventCallback", "screenOrientation", "fillOrientationChangeEventData", "registerOrientationChangeEventCallback", "fillFullscreenChangeEventData", "registerFullscreenChangeEventCallback", "JSEvents_requestFullscreen", "JSEvents_resizeCanvasForFullscreen", "registerRestoreOldStyle", "hideEverythingExceptGivenElement", "restoreHiddenElements", "setLetterbox", "softFullscreenResizeWebGLRenderTarget", "doRequestFullscreen", "fillPointerlockChangeEventData", "registerPointerlockChangeEventCallback", "registerPointerlockErrorEventCallback", "requestPointerLock", "fillVisibilityChangeEventData", "registerVisibilityChangeEventCallback", "registerTouchEventCallback", "fillGamepadEventData", "registerGamepadEventCallback", "registerBeforeUnloadEventCallback", "fillBatteryEventData", "registerBatteryEventCallback", "setCanvasElementSize", "getCanvasElementSize", "jsStackTrace", "getCallstack", "convertPCtoSourceLocation", "getEnvStrings", "checkWasiClock", "wasiRightsToMuslOFlags", "wasiOFlagsToMuslOFlags", "safeSetTimeout", "setImmediateWrapped", "safeRequestAnimationFrame", "clearImmediateWrapped", "registerPostMainLoop", "registerPreMainLoop", "getPromise", "makePromise", "idsToPromises", "makePromiseCallback", "Browser_asyncPrepareDataCounter", "isLeapYear", "ydayFromDate", "arraySum", "addDays", "getSocketFromFD", "getSocketAddress", "FS_mkdirTree", "_setNetworkCallback", "heapObjectForWebGLType", "toTypedArrayIndex", "webgl_enable_ANGLE_instanced_arrays", "webgl_enable_OES_vertex_array_object", "webgl_enable_WEBGL_draw_buffers", "webgl_enable_WEBGL_multi_draw", "webgl_enable_EXT_polygon_offset_clamp", "webgl_enable_EXT_clip_control", "webgl_enable_WEBGL_polygon_mode", "emscriptenWebGLGet", "computeUnpackAlignedImageSize", "colorChannelsInGlTextureFormat", "emscriptenWebGLGetTexPixelData", "emscriptenWebGLGetUniform", "webglGetUniformLocation", "webglPrepareUniformLocationsBeforeFirstUse", "webglGetLeftBracePos", "emscriptenWebGLGetVertexAttrib", "__glGetActiveAttribOrUniform", "writeGLArray", "registerWebGlEventCallback", "runAndAbortIfError", "ALLOC_NORMAL", "ALLOC_STACK", "allocate", "writeStringToMemory", "writeAsciiToMemory", "allocateUTF8", "allocateUTF8OnStack", "demangle", "stackTrace", "getNativeTypeSize" ];
+var missingLibrarySymbols = [ "writeI53ToI64", "writeI53ToI64Clamped", "writeI53ToI64Signaling", "writeI53ToU64Clamped", "writeI53ToU64Signaling", "readI53FromI64", "readI53FromU64", "convertI32PairToI53", "convertI32PairToI53Checked", "convertU32PairToI53", "getTempRet0", "zeroMemory", "withStackSave", "inetPton4", "inetNtop4", "inetPton6", "inetNtop6", "readSockaddr", "writeSockaddr", "runMainThreadEmAsm", "jstoi_q", "getExecutableName", "autoResumeAudioContext", "getDynCaller", "dynCall", "handleException", "runtimeKeepalivePush", "runtimeKeepalivePop", "callUserCallback", "maybeExit", "asmjsMangle", "HandleAllocator", "addOnInit", "addOnPostCtor", "addOnPreMain", "addOnExit", "STACK_SIZE", "STACK_ALIGN", "POINTER_SIZE", "ASSERTIONS", "ccall", "cwrap", "convertJsFunctionToWasm", "getEmptyTableSlot", "updateTableMap", "getFunctionAddress", "addFunction", "removeFunction", "intArrayToString", "stringToAscii", "stringToNewUTF8", "stringToUTF8OnStack", "writeArrayToMemory", "registerKeyEventCallback", "maybeCStringToJsString", "findEventTarget", "getBoundingClientRect", "fillMouseEventData", "registerMouseEventCallback", "registerWheelEventCallback", "registerUiEventCallback", "registerFocusEventCallback", "fillDeviceOrientationEventData", "registerDeviceOrientationEventCallback", "fillDeviceMotionEventData", "registerDeviceMotionEventCallback", "screenOrientation", "fillOrientationChangeEventData", "registerOrientationChangeEventCallback", "fillFullscreenChangeEventData", "registerFullscreenChangeEventCallback", "JSEvents_requestFullscreen", "JSEvents_resizeCanvasForFullscreen", "registerRestoreOldStyle", "hideEverythingExceptGivenElement", "restoreHiddenElements", "setLetterbox", "softFullscreenResizeWebGLRenderTarget", "doRequestFullscreen", "fillPointerlockChangeEventData", "registerPointerlockChangeEventCallback", "registerPointerlockErrorEventCallback", "requestPointerLock", "fillVisibilityChangeEventData", "registerVisibilityChangeEventCallback", "registerTouchEventCallback", "fillGamepadEventData", "registerGamepadEventCallback", "registerBeforeUnloadEventCallback", "fillBatteryEventData", "registerBatteryEventCallback", "setCanvasElementSize", "getCanvasElementSize", "jsStackTrace", "getCallstack", "convertPCtoSourceLocation", "getEnvStrings", "checkWasiClock", "wasiRightsToMuslOFlags", "wasiOFlagsToMuslOFlags", "safeSetTimeout", "setImmediateWrapped", "safeRequestAnimationFrame", "clearImmediateWrapped", "registerPostMainLoop", "registerPreMainLoop", "getPromise", "makePromise", "idsToPromises", "makePromiseCallback", "Browser_asyncPrepareDataCounter", "isLeapYear", "ydayFromDate", "arraySum", "addDays", "getSocketFromFD", "getSocketAddress", "FS_mkdirTree", "_setNetworkCallback", "heapObjectForWebGLType", "toTypedArrayIndex", "webgl_enable_ANGLE_instanced_arrays", "webgl_enable_OES_vertex_array_object", "webgl_enable_WEBGL_draw_buffers", "webgl_enable_WEBGL_multi_draw", "webgl_enable_EXT_polygon_offset_clamp", "webgl_enable_EXT_clip_control", "webgl_enable_WEBGL_polygon_mode", "emscriptenWebGLGet", "computeUnpackAlignedImageSize", "colorChannelsInGlTextureFormat", "emscriptenWebGLGetTexPixelData", "emscriptenWebGLGetUniform", "webglGetUniformLocation", "webglPrepareUniformLocationsBeforeFirstUse", "webglGetLeftBracePos", "emscriptenWebGLGetVertexAttrib", "__glGetActiveAttribOrUniform", "writeGLArray", "registerWebGlEventCallback", "runAndAbortIfError", "ALLOC_NORMAL", "ALLOC_STACK", "allocate", "writeStringToMemory", "writeAsciiToMemory", "allocateUTF8", "allocateUTF8OnStack", "demangle", "stackTrace", "getNativeTypeSize", "getFunctionArgsName", "createJsInvokerSignature", "PureVirtualError", "registerInheritedInstance", "unregisterInheritedInstance", "getInheritedInstanceCount", "getLiveInheritedInstances", "enumReadValueFromPointer", "setDelayFunction", "validateThis", "count_emval_handles" ];
 
 missingLibrarySymbols.forEach(missingLibrarySymbol);
 
-var unexportedSymbols = [ "run", "out", "err", "callMain", "abort", "wasmExports", "HEAPF64", "HEAP8", "HEAP16", "HEAPU16", "HEAP32", "HEAPU32", "HEAP64", "HEAPU64", "writeStackCookie", "checkStackCookie", "INT53_MAX", "INT53_MIN", "bigintToI53Checked", "stackSave", "stackRestore", "stackAlloc", "setTempRet0", "ptrToString", "exitJS", "getHeapMax", "growMemory", "ENV", "ERRNO_CODES", "strError", "DNS", "Protocols", "Sockets", "timers", "warnOnce", "readEmAsmArgsArray", "keepRuntimeAlive", "asyncLoad", "alignMemory", "mmapAlloc", "wasmTable", "wasmMemory", "getUniqueRunDependency", "noExitRuntime", "addRunDependency", "removeRunDependency", "addOnPreRun", "addOnInit", "addOnPostRun", "freeTableIndexes", "functionsInTableMap", "setValue", "getValue", "PATH", "PATH_FS", "UTF8Decoder", "UTF8ArrayToString", "UTF8ToString", "stringToUTF8Array", "lengthBytesUTF8", "intArrayFromString", "UTF16Decoder", "JSEvents", "specialHTMLTargets", "findCanvasEventTarget", "currentFullscreenStrategy", "restoreOldWindowedStyle", "UNWIND_CACHE", "ExitStatus", "doReadv", "doWritev", "initRandomFill", "randomFill", "emSetImmediate", "emClearImmediate_deps", "emClearImmediate", "promiseMap", "uncaughtExceptionCount", "exceptionLast", "exceptionCaught", "ExceptionInfo", "findMatchingCatch", "getExceptionMessageCommon", "Browser", "requestFullscreen", "requestFullScreen", "setCanvasSize", "getUserMedia", "createContext", "getPreloadedImageData__data", "wget", "MONTH_DAYS_REGULAR", "MONTH_DAYS_LEAP", "MONTH_DAYS_REGULAR_CUMULATIVE", "MONTH_DAYS_LEAP_CUMULATIVE", "SYSCALLS", "preloadPlugins", "FS_createPreloadedFile", "FS_preloadFile", "FS_modeStringToFlags", "FS_getMode", "FS_stdin_getChar_buffer", "FS_stdin_getChar", "FS_unlink", "FS_createPath", "FS_createDevice", "FS_readFile", "FS_root", "FS_mounts", "FS_devices", "FS_streams", "FS_nextInode", "FS_nameTable", "FS_currentPath", "FS_initialized", "FS_ignorePermissions", "FS_filesystems", "FS_syncFSRequests", "FS_readFiles", "FS_lookupPath", "FS_getPath", "FS_hashName", "FS_hashAddNode", "FS_hashRemoveNode", "FS_lookupNode", "FS_createNode", "FS_destroyNode", "FS_isRoot", "FS_isMountpoint", "FS_isFile", "FS_isDir", "FS_isLink", "FS_isChrdev", "FS_isBlkdev", "FS_isFIFO", "FS_isSocket", "FS_flagsToPermissionString", "FS_nodePermissions", "FS_mayLookup", "FS_mayCreate", "FS_mayDelete", "FS_mayOpen", "FS_checkOpExists", "FS_nextfd", "FS_getStreamChecked", "FS_getStream", "FS_createStream", "FS_closeStream", "FS_dupStream", "FS_doSetAttr", "FS_chrdev_stream_ops", "FS_major", "FS_minor", "FS_makedev", "FS_registerDevice", "FS_getDevice", "FS_getMounts", "FS_syncfs", "FS_mount", "FS_unmount", "FS_lookup", "FS_mknod", "FS_statfs", "FS_statfsStream", "FS_statfsNode", "FS_create", "FS_mkdir", "FS_mkdev", "FS_symlink", "FS_rename", "FS_rmdir", "FS_readdir", "FS_readlink", "FS_stat", "FS_fstat", "FS_lstat", "FS_doChmod", "FS_chmod", "FS_lchmod", "FS_fchmod", "FS_doChown", "FS_chown", "FS_lchown", "FS_fchown", "FS_doTruncate", "FS_truncate", "FS_ftruncate", "FS_utime", "FS_open", "FS_close", "FS_isClosed", "FS_llseek", "FS_read", "FS_write", "FS_mmap", "FS_msync", "FS_ioctl", "FS_writeFile", "FS_cwd", "FS_chdir", "FS_createDefaultDirectories", "FS_createDefaultDevices", "FS_createSpecialDirectories", "FS_createStandardStreams", "FS_staticInit", "FS_init", "FS_quit", "FS_findObject", "FS_analyzePath", "FS_createFile", "FS_createDataFile", "FS_forceLoadFile", "FS_createLazyFile", "FS_absolutePath", "FS_createFolder", "FS_createLink", "FS_joinPath", "FS_mmapAlloc", "FS_standardizePath", "MEMFS", "TTY", "PIPEFS", "SOCKFS", "tempFixedLengthArray", "miniTempWebGLFloatBuffers", "miniTempWebGLIntBuffers", "GL", "AL", "GLUT", "EGL", "GLEW", "IDBStore", "SDL", "SDL_gfx", "print", "printErr", "jstoi_s" ];
+var unexportedSymbols = [ "run", "out", "err", "callMain", "abort", "wasmExports", "HEAPF64", "HEAP8", "HEAP16", "HEAPU16", "HEAP32", "HEAPU32", "HEAP64", "HEAPU64", "writeStackCookie", "checkStackCookie", "INT53_MAX", "INT53_MIN", "bigintToI53Checked", "stackSave", "stackRestore", "stackAlloc", "setTempRet0", "createNamedFunction", "ptrToString", "exitJS", "getHeapMax", "growMemory", "ENV", "ERRNO_CODES", "strError", "DNS", "Protocols", "Sockets", "timers", "warnOnce", "readEmAsmArgsArray", "readEmAsmArgs", "runEmAsmFunction", "keepRuntimeAlive", "asyncLoad", "alignMemory", "mmapAlloc", "wasmTable", "wasmMemory", "getUniqueRunDependency", "noExitRuntime", "addRunDependency", "removeRunDependency", "addOnPreRun", "addOnPostRun", "freeTableIndexes", "functionsInTableMap", "setValue", "getValue", "PATH", "PATH_FS", "UTF8Decoder", "UTF8ArrayToString", "UTF8ToString", "stringToUTF8Array", "stringToUTF8", "lengthBytesUTF8", "intArrayFromString", "AsciiToString", "UTF16Decoder", "UTF16ToString", "stringToUTF16", "lengthBytesUTF16", "UTF32ToString", "stringToUTF32", "lengthBytesUTF32", "JSEvents", "specialHTMLTargets", "findCanvasEventTarget", "currentFullscreenStrategy", "restoreOldWindowedStyle", "UNWIND_CACHE", "ExitStatus", "doReadv", "doWritev", "initRandomFill", "randomFill", "emSetImmediate", "emClearImmediate_deps", "emClearImmediate", "promiseMap", "uncaughtExceptionCount", "exceptionLast", "exceptionCaught", "ExceptionInfo", "findMatchingCatch", "getExceptionMessageCommon", "Browser", "requestFullscreen", "requestFullScreen", "setCanvasSize", "getUserMedia", "createContext", "getPreloadedImageData__data", "wget", "MONTH_DAYS_REGULAR", "MONTH_DAYS_LEAP", "MONTH_DAYS_REGULAR_CUMULATIVE", "MONTH_DAYS_LEAP_CUMULATIVE", "SYSCALLS", "preloadPlugins", "FS_createPreloadedFile", "FS_preloadFile", "FS_modeStringToFlags", "FS_getMode", "FS_stdin_getChar_buffer", "FS_stdin_getChar", "FS_unlink", "FS_createPath", "FS_createDevice", "FS_readFile", "FS_root", "FS_mounts", "FS_devices", "FS_streams", "FS_nextInode", "FS_nameTable", "FS_currentPath", "FS_initialized", "FS_ignorePermissions", "FS_filesystems", "FS_syncFSRequests", "FS_readFiles", "FS_lookupPath", "FS_getPath", "FS_hashName", "FS_hashAddNode", "FS_hashRemoveNode", "FS_lookupNode", "FS_createNode", "FS_destroyNode", "FS_isRoot", "FS_isMountpoint", "FS_isFile", "FS_isDir", "FS_isLink", "FS_isChrdev", "FS_isBlkdev", "FS_isFIFO", "FS_isSocket", "FS_flagsToPermissionString", "FS_nodePermissions", "FS_mayLookup", "FS_mayCreate", "FS_mayDelete", "FS_mayOpen", "FS_checkOpExists", "FS_nextfd", "FS_getStreamChecked", "FS_getStream", "FS_createStream", "FS_closeStream", "FS_dupStream", "FS_doSetAttr", "FS_chrdev_stream_ops", "FS_major", "FS_minor", "FS_makedev", "FS_registerDevice", "FS_getDevice", "FS_getMounts", "FS_syncfs", "FS_mount", "FS_unmount", "FS_lookup", "FS_mknod", "FS_statfs", "FS_statfsStream", "FS_statfsNode", "FS_create", "FS_mkdir", "FS_mkdev", "FS_symlink", "FS_rename", "FS_rmdir", "FS_readdir", "FS_readlink", "FS_stat", "FS_fstat", "FS_lstat", "FS_doChmod", "FS_chmod", "FS_lchmod", "FS_fchmod", "FS_doChown", "FS_chown", "FS_lchown", "FS_fchown", "FS_doTruncate", "FS_truncate", "FS_ftruncate", "FS_utime", "FS_open", "FS_close", "FS_isClosed", "FS_llseek", "FS_read", "FS_write", "FS_mmap", "FS_msync", "FS_ioctl", "FS_writeFile", "FS_cwd", "FS_chdir", "FS_createDefaultDirectories", "FS_createDefaultDevices", "FS_createSpecialDirectories", "FS_createStandardStreams", "FS_staticInit", "FS_init", "FS_quit", "FS_findObject", "FS_analyzePath", "FS_createFile", "FS_createDataFile", "FS_forceLoadFile", "FS_createLazyFile", "FS_absolutePath", "FS_createFolder", "FS_createLink", "FS_joinPath", "FS_mmapAlloc", "FS_standardizePath", "MEMFS", "TTY", "PIPEFS", "SOCKFS", "tempFixedLengthArray", "miniTempWebGLFloatBuffers", "miniTempWebGLIntBuffers", "GL", "AL", "GLUT", "EGL", "GLEW", "IDBStore", "SDL", "SDL_gfx", "print", "printErr", "jstoi_s", "InternalError", "BindingError", "throwInternalError", "throwBindingError", "registeredTypes", "awaitingDependencies", "typeDependencies", "tupleRegistrations", "structRegistrations", "sharedRegisterType", "whenDependentTypesAreResolved", "getTypeName", "getFunctionName", "heap32VectorToArray", "requireRegisteredType", "usesDestructorStack", "checkArgCount", "getRequiredArgCount", "createJsInvoker", "UnboundTypeError", "EmValType", "EmValOptionalType", "throwUnboundTypeError", "ensureOverloadTable", "exposePublicSymbol", "replacePublicSymbol", "embindRepr", "registeredInstances", "getBasestPointer", "getInheritedInstance", "registeredPointers", "registerType", "integerReadValueFromPointer", "floatReadValueFromPointer", "assertIntegerRange", "readPointer", "runDestructors", "craftInvokerFunction", "embind__requireFunction", "genericPointerToWireType", "constNoSmartPtrRawPointerToWireType", "nonConstNoSmartPtrRawPointerToWireType", "init_RegisteredPointer", "RegisteredPointer", "RegisteredPointer_fromWireType", "runDestructor", "releaseClassHandle", "finalizationRegistry", "detachFinalizer_deps", "detachFinalizer", "attachFinalizer", "makeClassHandle", "init_ClassHandle", "ClassHandle", "throwInstanceAlreadyDeleted", "deletionQueue", "flushPendingDeletes", "delayFunction", "RegisteredClass", "shallowCopyInternalPointer", "downcastPointer", "upcastPointer", "char_0", "char_9", "makeLegalFunctionName", "emval_freelist", "emval_handles", "emval_symbols", "getStringOrSymbol", "Emval", "emval_returnValue", "emval_lookupTypes", "emval_methodCallers", "emval_addMethodCaller" ];
 
 unexportedSymbols.forEach(unexportedRuntimeSymbol);
 
@@ -3972,152 +5581,137 @@ function checkIncomingModuleAPI() {
   ignoredModuleProp("fetchSettings");
 }
 
-// Imports from the Wasm binary.
-var _free = Module["_free"] = makeInvalidEarlyAccess("_free");
+var ASM_CONSTS = {
+  30292: ($0, $1, $2) => {
+    var message = UTF8ToString($0);
+    var infoHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    console.log(infoHead + message, style);
+  },
+  30431: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var infoHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    var format = UTF8ToString($3);
+    console.log(infoHead + message, style, format);
+  },
+  30609: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var infoHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    var format = UTF8ToString($3);
+    console.log(infoHead + message, style, format);
+  },
+  30787: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var infoHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    var format = UTF8ToString($3);
+    console.log(infoHead + message, style, format);
+  },
+  30965: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var infoHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    var format = UTF8ToString($3);
+    console.log(infoHead + message, style, format);
+  },
+  31143: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var infoHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    console.log(infoHead + message, style, $3);
+  },
+  31286: ($0, $1, $2) => {
+    var message = UTF8ToString($0);
+    var errorHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    console.error(errorHead + message, style);
+  },
+  31429: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var errorHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    var format = UTF8ToString($3);
+    console.error(errorHead + message, style, format);
+  },
+  31611: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var errorHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    var format = UTF8ToString($3);
+    console.error(errorHead + message, style, format);
+  },
+  31793: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var errorHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    var format = UTF8ToString($3);
+    console.error(errorHead + message, style, format);
+  },
+  31975: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var errorHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    var format = UTF8ToString($3);
+    console.error(errorHead + message, style, format);
+  },
+  32157: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var errorHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    console.error(errorHead + message, style, $3);
+  },
+  32304: ($0, $1, $2) => {
+    var message = UTF8ToString($0);
+    var infoHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    console.warn(infoHead + message, style);
+  },
+  32444: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var errorHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    var format = UTF8ToString($3);
+    console.warn(errorHead + message, style, format);
+  },
+  32625: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var errorHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    var format = UTF8ToString($3);
+    console.warn(errorHead + message, style, format);
+  },
+  32806: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var errorHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    var format = UTF8ToString($3);
+    console.warn(errorHead + message, style, format);
+  },
+  32987: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var errorHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    var format = UTF8ToString($3);
+    console.warn(errorHead + message, style, format);
+  },
+  33168: ($0, $1, $2, $3) => {
+    var message = UTF8ToString($0);
+    var errorHead = UTF8ToString($1);
+    var style = UTF8ToString($2);
+    console.warn(errorHead + message, style, $3);
+  }
+};
 
-var _malloc = Module["_malloc"] = makeInvalidEarlyAccess("_malloc");
+// Imports from the Wasm binary.
+var ___getTypeName = makeInvalidEarlyAccess("___getTypeName");
+
+var _malloc = makeInvalidEarlyAccess("_malloc");
+
+var _free = makeInvalidEarlyAccess("_free");
 
 var _strerror = makeInvalidEarlyAccess("_strerror");
-
-var _webidl_free = Module["_webidl_free"] = makeInvalidEarlyAccess("_webidl_free");
-
-var _webidl_malloc = Module["_webidl_malloc"] = makeInvalidEarlyAccess("_webidl_malloc");
-
-var _emscripten_bind_VoidPtr___destroy___0 = Module["_emscripten_bind_VoidPtr___destroy___0"] = makeInvalidEarlyAccess("_emscripten_bind_VoidPtr___destroy___0");
-
-var _emscripten_bind_ARToolKitCore_ARToolKitCore_0 = Module["_emscripten_bind_ARToolKitCore_ARToolKitCore_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_ARToolKitCore_0");
-
-var _emscripten_bind_ARToolKitCore_ERROR_OK__0 = Module["_emscripten_bind_ARToolKitCore_ERROR_OK__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_ERROR_OK__0");
-
-var _emscripten_bind_ARToolKitCore_ERROR_NOT_INITIALIZED__0 = Module["_emscripten_bind_ARToolKitCore_ERROR_NOT_INITIALIZED__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_ERROR_NOT_INITIALIZED__0");
-
-var _emscripten_bind_ARToolKitCore_ERROR_INVALID_ARGUMENT__0 = Module["_emscripten_bind_ARToolKitCore_ERROR_INVALID_ARGUMENT__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_ERROR_INVALID_ARGUMENT__0");
-
-var _emscripten_bind_ARToolKitCore_ERROR_ARCONTROLLER_NOT_FOUND__0 = Module["_emscripten_bind_ARToolKitCore_ERROR_ARCONTROLLER_NOT_FOUND__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_ERROR_ARCONTROLLER_NOT_FOUND__0");
-
-var _emscripten_bind_ARToolKitCore_ERROR_MARKER_INDEX_OUT_OF_BOUNDS__0 = Module["_emscripten_bind_ARToolKitCore_ERROR_MARKER_INDEX_OUT_OF_BOUNDS__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_ERROR_MARKER_INDEX_OUT_OF_BOUNDS__0");
-
-var _emscripten_bind_ARToolKitCore_AR_DEBUG_DISABLE__0 = Module["_emscripten_bind_ARToolKitCore_AR_DEBUG_DISABLE__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_DEBUG_DISABLE__0");
-
-var _emscripten_bind_ARToolKitCore_AR_DEBUG_ENABLE__0 = Module["_emscripten_bind_ARToolKitCore_AR_DEBUG_ENABLE__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_DEBUG_ENABLE__0");
-
-var _emscripten_bind_ARToolKitCore_AR_DEFAULT_LABELING_THRESH__0 = Module["_emscripten_bind_ARToolKitCore_AR_DEFAULT_LABELING_THRESH__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_DEFAULT_LABELING_THRESH__0");
-
-var _emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FRAME_IMAGE__0 = Module["_emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FRAME_IMAGE__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FRAME_IMAGE__0");
-
-var _emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FIELD_IMAGE__0 = Module["_emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FIELD_IMAGE__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FIELD_IMAGE__0");
-
-var _emscripten_bind_ARToolKitCore_AR_DEFAULT_IMAGE_PROC_MODE__0 = Module["_emscripten_bind_ARToolKitCore_AR_DEFAULT_IMAGE_PROC_MODE__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_DEFAULT_IMAGE_PROC_MODE__0");
-
-var _emscripten_bind_ARToolKitCore_AR_MAX_LOOP_COUNT__0 = Module["_emscripten_bind_ARToolKitCore_AR_MAX_LOOP_COUNT__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_MAX_LOOP_COUNT__0");
-
-var _emscripten_bind_ARToolKitCore_AR_LOOP_BREAK_THRESH__0 = Module["_emscripten_bind_ARToolKitCore_AR_LOOP_BREAK_THRESH__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_LOOP_BREAK_THRESH__0");
-
-var _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_DEBUG__0 = Module["_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_DEBUG__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_DEBUG__0");
-
-var _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_INFO__0 = Module["_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_INFO__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_INFO__0");
-
-var _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_WARN__0 = Module["_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_WARN__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_WARN__0");
-
-var _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_ERROR__0 = Module["_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_ERROR__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_ERROR__0");
-
-var _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_REL_INFO__0 = Module["_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_REL_INFO__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_REL_INFO__0");
-
-var _emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_MANUAL__0 = Module["_emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_MANUAL__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_MANUAL__0");
-
-var _emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_MEDIAN__0 = Module["_emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_MEDIAN__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_MEDIAN__0");
-
-var _emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_OTSU__0 = Module["_emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_OTSU__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_OTSU__0");
-
-var _emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_ADAPTIVE__0 = Module["_emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_ADAPTIVE__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_ADAPTIVE__0");
-
-var _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_NONE__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_NONE__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_NONE__0");
-
-var _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_PATTERN_EXTRACTION__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_PATTERN_EXTRACTION__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_PATTERN_EXTRACTION__0");
-
-var _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_GENERIC__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_GENERIC__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_GENERIC__0");
-
-var _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONTRAST__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONTRAST__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONTRAST__0");
-
-var _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_NOT_FOUND__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_NOT_FOUND__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_NOT_FOUND__0");
-
-var _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_EDC_FAIL__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_EDC_FAIL__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_EDC_FAIL__0");
-
-var _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONFIDENCE__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONFIDENCE__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONFIDENCE__0");
-
-var _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR__0");
-
-var _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_MULTI__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_MULTI__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_MULTI__0");
-
-var _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES__0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES__0");
-
-var _emscripten_bind_ARToolKitCore_setup_3 = Module["_emscripten_bind_ARToolKitCore_setup_3"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_setup_3");
-
-var _emscripten_bind_ARToolKitCore_teardown_0 = Module["_emscripten_bind_ARToolKitCore_teardown_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_teardown_0");
-
-var _emscripten_bind_ARToolKitCore_loadCameraFromPath_1 = Module["_emscripten_bind_ARToolKitCore_loadCameraFromPath_1"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_loadCameraFromPath_1");
-
-var _emscripten_bind_ARToolKitCore_loadCameraFromBuffer_2 = Module["_emscripten_bind_ARToolKitCore_loadCameraFromBuffer_2"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_loadCameraFromBuffer_2");
-
-var _emscripten_bind_ARToolKitCore_getCameraLens_1 = Module["_emscripten_bind_ARToolKitCore_getCameraLens_1"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getCameraLens_1");
-
-var _emscripten_bind_ARToolKitCore_addMarker_1 = Module["_emscripten_bind_ARToolKitCore_addMarker_1"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_addMarker_1");
-
-var _emscripten_bind_ARToolKitCore_addPatternFromBuffer_2 = Module["_emscripten_bind_ARToolKitCore_addPatternFromBuffer_2"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_addPatternFromBuffer_2");
-
-var _emscripten_bind_ARToolKitCore_getMarkerInfo_1 = Module["_emscripten_bind_ARToolKitCore_getMarkerInfo_1"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getMarkerInfo_1");
-
-var _emscripten_bind_ARToolKitCore_setMarkerInfoDir_2 = Module["_emscripten_bind_ARToolKitCore_setMarkerInfoDir_2"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_setMarkerInfoDir_2");
-
-var _emscripten_bind_ARToolKitCore_setMatrixCodeType_1 = Module["_emscripten_bind_ARToolKitCore_setMatrixCodeType_1"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_setMatrixCodeType_1");
-
-var _emscripten_bind_ARToolKitCore_setThreshold_1 = Module["_emscripten_bind_ARToolKitCore_setThreshold_1"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_setThreshold_1");
-
-var _emscripten_bind_ARToolKitCore_getThreshold_0 = Module["_emscripten_bind_ARToolKitCore_getThreshold_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getThreshold_0");
-
-var _emscripten_bind_ARToolKitCore_setThresholdMode_1 = Module["_emscripten_bind_ARToolKitCore_setThresholdMode_1"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_setThresholdMode_1");
-
-var _emscripten_bind_ARToolKitCore_getThresholdMode_0 = Module["_emscripten_bind_ARToolKitCore_getThresholdMode_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getThresholdMode_0");
-
-var _emscripten_bind_ARToolKitCore_setDebugMode_1 = Module["_emscripten_bind_ARToolKitCore_setDebugMode_1"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_setDebugMode_1");
-
-var _emscripten_bind_ARToolKitCore_getDebugMode_0 = Module["_emscripten_bind_ARToolKitCore_getDebugMode_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getDebugMode_0");
-
-var _emscripten_bind_ARToolKitCore_setImageProcMode_1 = Module["_emscripten_bind_ARToolKitCore_setImageProcMode_1"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_setImageProcMode_1");
-
-var _emscripten_bind_ARToolKitCore_getImageProcMode_0 = Module["_emscripten_bind_ARToolKitCore_getImageProcMode_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getImageProcMode_0");
-
-var _emscripten_bind_ARToolKitCore_setProjectionNearPlane_1 = Module["_emscripten_bind_ARToolKitCore_setProjectionNearPlane_1"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_setProjectionNearPlane_1");
-
-var _emscripten_bind_ARToolKitCore_getProjectionNearPlane_0 = Module["_emscripten_bind_ARToolKitCore_getProjectionNearPlane_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getProjectionNearPlane_0");
-
-var _emscripten_bind_ARToolKitCore_setProjectionFarPlane_1 = Module["_emscripten_bind_ARToolKitCore_setProjectionFarPlane_1"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_setProjectionFarPlane_1");
-
-var _emscripten_bind_ARToolKitCore_getProjectionFarPlane_0 = Module["_emscripten_bind_ARToolKitCore_getProjectionFarPlane_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getProjectionFarPlane_0");
-
-var _emscripten_bind_ARToolKitCore_getFrameBufferRGBA_0 = Module["_emscripten_bind_ARToolKitCore_getFrameBufferRGBA_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getFrameBufferRGBA_0");
-
-var _emscripten_bind_ARToolKitCore_getFrameBufferGRAY_0 = Module["_emscripten_bind_ARToolKitCore_getFrameBufferGRAY_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getFrameBufferGRAY_0");
-
-var _emscripten_bind_ARToolKitCore_getFrameWidth_0 = Module["_emscripten_bind_ARToolKitCore_getFrameWidth_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getFrameWidth_0");
-
-var _emscripten_bind_ARToolKitCore_getFrameHeight_0 = Module["_emscripten_bind_ARToolKitCore_getFrameHeight_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getFrameHeight_0");
-
-var _emscripten_bind_ARToolKitCore_setFrameRGBA_1 = Module["_emscripten_bind_ARToolKitCore_setFrameRGBA_1"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_setFrameRGBA_1");
-
-var _emscripten_bind_ARToolKitCore_setFrameGRAY_1 = Module["_emscripten_bind_ARToolKitCore_setFrameGRAY_1"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_setFrameGRAY_1");
-
-var _emscripten_bind_ARToolKitCore_detectMarker_0 = Module["_emscripten_bind_ARToolKitCore_detectMarker_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_detectMarker_0");
-
-var _emscripten_bind_ARToolKitCore_getMarkerNum_0 = Module["_emscripten_bind_ARToolKitCore_getMarkerNum_0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getMarkerNum_0");
-
-var _emscripten_bind_ARToolKitCore_getMarkerPose44_2 = Module["_emscripten_bind_ARToolKitCore_getMarkerPose44_2"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getMarkerPose44_2");
-
-var _emscripten_bind_ARToolKitCore_getTransMatSquareCont_2 = Module["_emscripten_bind_ARToolKitCore_getTransMatSquareCont_2"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getTransMatSquareCont_2");
-
-var _emscripten_bind_ARToolKitCore_getTransMatSquare_2 = Module["_emscripten_bind_ARToolKitCore_getTransMatSquare_2"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore_getTransMatSquare_2");
-
-var _emscripten_bind_ARToolKitCore___destroy___0 = Module["_emscripten_bind_ARToolKitCore___destroy___0"] = makeInvalidEarlyAccess("_emscripten_bind_ARToolKitCore___destroy___0");
 
 var _fflush = makeInvalidEarlyAccess("_fflush");
 
@@ -4160,152 +5754,14 @@ var wasmMemory = makeInvalidEarlyAccess("wasmMemory");
 var wasmTable = makeInvalidEarlyAccess("wasmTable");
 
 function assignWasmExports(wasmExports) {
-  assert(wasmExports["free"], "missing Wasm export: free");
-  _free = Module["_free"] = createExportWrapper("free", 1);
+  assert(wasmExports["__getTypeName"], "missing Wasm export: __getTypeName");
+  ___getTypeName = createExportWrapper("__getTypeName", 1);
   assert(wasmExports["malloc"], "missing Wasm export: malloc");
-  _malloc = Module["_malloc"] = createExportWrapper("malloc", 1);
+  _malloc = createExportWrapper("malloc", 1);
+  assert(wasmExports["free"], "missing Wasm export: free");
+  _free = createExportWrapper("free", 1);
   assert(wasmExports["strerror"], "missing Wasm export: strerror");
   _strerror = createExportWrapper("strerror", 1);
-  assert(wasmExports["webidl_free"], "missing Wasm export: webidl_free");
-  _webidl_free = Module["_webidl_free"] = createExportWrapper("webidl_free", 1);
-  assert(wasmExports["webidl_malloc"], "missing Wasm export: webidl_malloc");
-  _webidl_malloc = Module["_webidl_malloc"] = createExportWrapper("webidl_malloc", 1);
-  assert(wasmExports["emscripten_bind_VoidPtr___destroy___0"], "missing Wasm export: emscripten_bind_VoidPtr___destroy___0");
-  _emscripten_bind_VoidPtr___destroy___0 = Module["_emscripten_bind_VoidPtr___destroy___0"] = createExportWrapper("emscripten_bind_VoidPtr___destroy___0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_ARToolKitCore_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_ARToolKitCore_0");
-  _emscripten_bind_ARToolKitCore_ARToolKitCore_0 = Module["_emscripten_bind_ARToolKitCore_ARToolKitCore_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_ARToolKitCore_0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_ERROR_OK__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_ERROR_OK__0");
-  _emscripten_bind_ARToolKitCore_ERROR_OK__0 = Module["_emscripten_bind_ARToolKitCore_ERROR_OK__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_ERROR_OK__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_ERROR_NOT_INITIALIZED__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_ERROR_NOT_INITIALIZED__0");
-  _emscripten_bind_ARToolKitCore_ERROR_NOT_INITIALIZED__0 = Module["_emscripten_bind_ARToolKitCore_ERROR_NOT_INITIALIZED__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_ERROR_NOT_INITIALIZED__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_ERROR_INVALID_ARGUMENT__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_ERROR_INVALID_ARGUMENT__0");
-  _emscripten_bind_ARToolKitCore_ERROR_INVALID_ARGUMENT__0 = Module["_emscripten_bind_ARToolKitCore_ERROR_INVALID_ARGUMENT__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_ERROR_INVALID_ARGUMENT__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_ERROR_ARCONTROLLER_NOT_FOUND__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_ERROR_ARCONTROLLER_NOT_FOUND__0");
-  _emscripten_bind_ARToolKitCore_ERROR_ARCONTROLLER_NOT_FOUND__0 = Module["_emscripten_bind_ARToolKitCore_ERROR_ARCONTROLLER_NOT_FOUND__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_ERROR_ARCONTROLLER_NOT_FOUND__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_ERROR_MARKER_INDEX_OUT_OF_BOUNDS__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_ERROR_MARKER_INDEX_OUT_OF_BOUNDS__0");
-  _emscripten_bind_ARToolKitCore_ERROR_MARKER_INDEX_OUT_OF_BOUNDS__0 = Module["_emscripten_bind_ARToolKitCore_ERROR_MARKER_INDEX_OUT_OF_BOUNDS__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_ERROR_MARKER_INDEX_OUT_OF_BOUNDS__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_DEBUG_DISABLE__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_DEBUG_DISABLE__0");
-  _emscripten_bind_ARToolKitCore_AR_DEBUG_DISABLE__0 = Module["_emscripten_bind_ARToolKitCore_AR_DEBUG_DISABLE__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_DEBUG_DISABLE__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_DEBUG_ENABLE__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_DEBUG_ENABLE__0");
-  _emscripten_bind_ARToolKitCore_AR_DEBUG_ENABLE__0 = Module["_emscripten_bind_ARToolKitCore_AR_DEBUG_ENABLE__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_DEBUG_ENABLE__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_DEFAULT_LABELING_THRESH__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_DEFAULT_LABELING_THRESH__0");
-  _emscripten_bind_ARToolKitCore_AR_DEFAULT_LABELING_THRESH__0 = Module["_emscripten_bind_ARToolKitCore_AR_DEFAULT_LABELING_THRESH__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_DEFAULT_LABELING_THRESH__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FRAME_IMAGE__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FRAME_IMAGE__0");
-  _emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FRAME_IMAGE__0 = Module["_emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FRAME_IMAGE__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FRAME_IMAGE__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FIELD_IMAGE__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FIELD_IMAGE__0");
-  _emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FIELD_IMAGE__0 = Module["_emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FIELD_IMAGE__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FIELD_IMAGE__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_DEFAULT_IMAGE_PROC_MODE__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_DEFAULT_IMAGE_PROC_MODE__0");
-  _emscripten_bind_ARToolKitCore_AR_DEFAULT_IMAGE_PROC_MODE__0 = Module["_emscripten_bind_ARToolKitCore_AR_DEFAULT_IMAGE_PROC_MODE__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_DEFAULT_IMAGE_PROC_MODE__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_MAX_LOOP_COUNT__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_MAX_LOOP_COUNT__0");
-  _emscripten_bind_ARToolKitCore_AR_MAX_LOOP_COUNT__0 = Module["_emscripten_bind_ARToolKitCore_AR_MAX_LOOP_COUNT__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_MAX_LOOP_COUNT__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_LOOP_BREAK_THRESH__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_LOOP_BREAK_THRESH__0");
-  _emscripten_bind_ARToolKitCore_AR_LOOP_BREAK_THRESH__0 = Module["_emscripten_bind_ARToolKitCore_AR_LOOP_BREAK_THRESH__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_LOOP_BREAK_THRESH__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_DEBUG__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_DEBUG__0");
-  _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_DEBUG__0 = Module["_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_DEBUG__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_DEBUG__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_INFO__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_INFO__0");
-  _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_INFO__0 = Module["_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_INFO__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_INFO__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_WARN__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_WARN__0");
-  _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_WARN__0 = Module["_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_WARN__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_WARN__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_ERROR__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_ERROR__0");
-  _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_ERROR__0 = Module["_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_ERROR__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_ERROR__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_REL_INFO__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_REL_INFO__0");
-  _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_REL_INFO__0 = Module["_emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_REL_INFO__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_REL_INFO__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_MANUAL__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_MANUAL__0");
-  _emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_MANUAL__0 = Module["_emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_MANUAL__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_MANUAL__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_MEDIAN__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_MEDIAN__0");
-  _emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_MEDIAN__0 = Module["_emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_MEDIAN__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_MEDIAN__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_OTSU__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_OTSU__0");
-  _emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_OTSU__0 = Module["_emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_OTSU__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_OTSU__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_ADAPTIVE__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_ADAPTIVE__0");
-  _emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_ADAPTIVE__0 = Module["_emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_ADAPTIVE__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_ADAPTIVE__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_NONE__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_NONE__0");
-  _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_NONE__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_NONE__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_NONE__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_PATTERN_EXTRACTION__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_PATTERN_EXTRACTION__0");
-  _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_PATTERN_EXTRACTION__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_PATTERN_EXTRACTION__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_PATTERN_EXTRACTION__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_GENERIC__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_GENERIC__0");
-  _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_GENERIC__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_GENERIC__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_GENERIC__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONTRAST__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONTRAST__0");
-  _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONTRAST__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONTRAST__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONTRAST__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_NOT_FOUND__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_NOT_FOUND__0");
-  _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_NOT_FOUND__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_NOT_FOUND__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_NOT_FOUND__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_EDC_FAIL__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_EDC_FAIL__0");
-  _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_EDC_FAIL__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_EDC_FAIL__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_EDC_FAIL__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONFIDENCE__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONFIDENCE__0");
-  _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONFIDENCE__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONFIDENCE__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONFIDENCE__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR__0");
-  _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_MULTI__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_MULTI__0");
-  _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_MULTI__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_MULTI__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_MULTI__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES__0"], "missing Wasm export: emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES__0");
-  _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES__0 = Module["_emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES__0"] = createExportWrapper("emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES__0", 0);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_setup_3"], "missing Wasm export: emscripten_bind_ARToolKitCore_setup_3");
-  _emscripten_bind_ARToolKitCore_setup_3 = Module["_emscripten_bind_ARToolKitCore_setup_3"] = createExportWrapper("emscripten_bind_ARToolKitCore_setup_3", 4);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_teardown_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_teardown_0");
-  _emscripten_bind_ARToolKitCore_teardown_0 = Module["_emscripten_bind_ARToolKitCore_teardown_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_teardown_0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_loadCameraFromPath_1"], "missing Wasm export: emscripten_bind_ARToolKitCore_loadCameraFromPath_1");
-  _emscripten_bind_ARToolKitCore_loadCameraFromPath_1 = Module["_emscripten_bind_ARToolKitCore_loadCameraFromPath_1"] = createExportWrapper("emscripten_bind_ARToolKitCore_loadCameraFromPath_1", 2);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_loadCameraFromBuffer_2"], "missing Wasm export: emscripten_bind_ARToolKitCore_loadCameraFromBuffer_2");
-  _emscripten_bind_ARToolKitCore_loadCameraFromBuffer_2 = Module["_emscripten_bind_ARToolKitCore_loadCameraFromBuffer_2"] = createExportWrapper("emscripten_bind_ARToolKitCore_loadCameraFromBuffer_2", 3);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getCameraLens_1"], "missing Wasm export: emscripten_bind_ARToolKitCore_getCameraLens_1");
-  _emscripten_bind_ARToolKitCore_getCameraLens_1 = Module["_emscripten_bind_ARToolKitCore_getCameraLens_1"] = createExportWrapper("emscripten_bind_ARToolKitCore_getCameraLens_1", 2);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_addMarker_1"], "missing Wasm export: emscripten_bind_ARToolKitCore_addMarker_1");
-  _emscripten_bind_ARToolKitCore_addMarker_1 = Module["_emscripten_bind_ARToolKitCore_addMarker_1"] = createExportWrapper("emscripten_bind_ARToolKitCore_addMarker_1", 2);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_addPatternFromBuffer_2"], "missing Wasm export: emscripten_bind_ARToolKitCore_addPatternFromBuffer_2");
-  _emscripten_bind_ARToolKitCore_addPatternFromBuffer_2 = Module["_emscripten_bind_ARToolKitCore_addPatternFromBuffer_2"] = createExportWrapper("emscripten_bind_ARToolKitCore_addPatternFromBuffer_2", 3);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getMarkerInfo_1"], "missing Wasm export: emscripten_bind_ARToolKitCore_getMarkerInfo_1");
-  _emscripten_bind_ARToolKitCore_getMarkerInfo_1 = Module["_emscripten_bind_ARToolKitCore_getMarkerInfo_1"] = createExportWrapper("emscripten_bind_ARToolKitCore_getMarkerInfo_1", 3);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_setMarkerInfoDir_2"], "missing Wasm export: emscripten_bind_ARToolKitCore_setMarkerInfoDir_2");
-  _emscripten_bind_ARToolKitCore_setMarkerInfoDir_2 = Module["_emscripten_bind_ARToolKitCore_setMarkerInfoDir_2"] = createExportWrapper("emscripten_bind_ARToolKitCore_setMarkerInfoDir_2", 3);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_setMatrixCodeType_1"], "missing Wasm export: emscripten_bind_ARToolKitCore_setMatrixCodeType_1");
-  _emscripten_bind_ARToolKitCore_setMatrixCodeType_1 = Module["_emscripten_bind_ARToolKitCore_setMatrixCodeType_1"] = createExportWrapper("emscripten_bind_ARToolKitCore_setMatrixCodeType_1", 2);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_setThreshold_1"], "missing Wasm export: emscripten_bind_ARToolKitCore_setThreshold_1");
-  _emscripten_bind_ARToolKitCore_setThreshold_1 = Module["_emscripten_bind_ARToolKitCore_setThreshold_1"] = createExportWrapper("emscripten_bind_ARToolKitCore_setThreshold_1", 2);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getThreshold_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_getThreshold_0");
-  _emscripten_bind_ARToolKitCore_getThreshold_0 = Module["_emscripten_bind_ARToolKitCore_getThreshold_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_getThreshold_0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_setThresholdMode_1"], "missing Wasm export: emscripten_bind_ARToolKitCore_setThresholdMode_1");
-  _emscripten_bind_ARToolKitCore_setThresholdMode_1 = Module["_emscripten_bind_ARToolKitCore_setThresholdMode_1"] = createExportWrapper("emscripten_bind_ARToolKitCore_setThresholdMode_1", 2);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getThresholdMode_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_getThresholdMode_0");
-  _emscripten_bind_ARToolKitCore_getThresholdMode_0 = Module["_emscripten_bind_ARToolKitCore_getThresholdMode_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_getThresholdMode_0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_setDebugMode_1"], "missing Wasm export: emscripten_bind_ARToolKitCore_setDebugMode_1");
-  _emscripten_bind_ARToolKitCore_setDebugMode_1 = Module["_emscripten_bind_ARToolKitCore_setDebugMode_1"] = createExportWrapper("emscripten_bind_ARToolKitCore_setDebugMode_1", 2);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getDebugMode_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_getDebugMode_0");
-  _emscripten_bind_ARToolKitCore_getDebugMode_0 = Module["_emscripten_bind_ARToolKitCore_getDebugMode_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_getDebugMode_0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_setImageProcMode_1"], "missing Wasm export: emscripten_bind_ARToolKitCore_setImageProcMode_1");
-  _emscripten_bind_ARToolKitCore_setImageProcMode_1 = Module["_emscripten_bind_ARToolKitCore_setImageProcMode_1"] = createExportWrapper("emscripten_bind_ARToolKitCore_setImageProcMode_1", 2);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getImageProcMode_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_getImageProcMode_0");
-  _emscripten_bind_ARToolKitCore_getImageProcMode_0 = Module["_emscripten_bind_ARToolKitCore_getImageProcMode_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_getImageProcMode_0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_setProjectionNearPlane_1"], "missing Wasm export: emscripten_bind_ARToolKitCore_setProjectionNearPlane_1");
-  _emscripten_bind_ARToolKitCore_setProjectionNearPlane_1 = Module["_emscripten_bind_ARToolKitCore_setProjectionNearPlane_1"] = createExportWrapper("emscripten_bind_ARToolKitCore_setProjectionNearPlane_1", 2);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getProjectionNearPlane_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_getProjectionNearPlane_0");
-  _emscripten_bind_ARToolKitCore_getProjectionNearPlane_0 = Module["_emscripten_bind_ARToolKitCore_getProjectionNearPlane_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_getProjectionNearPlane_0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_setProjectionFarPlane_1"], "missing Wasm export: emscripten_bind_ARToolKitCore_setProjectionFarPlane_1");
-  _emscripten_bind_ARToolKitCore_setProjectionFarPlane_1 = Module["_emscripten_bind_ARToolKitCore_setProjectionFarPlane_1"] = createExportWrapper("emscripten_bind_ARToolKitCore_setProjectionFarPlane_1", 2);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getProjectionFarPlane_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_getProjectionFarPlane_0");
-  _emscripten_bind_ARToolKitCore_getProjectionFarPlane_0 = Module["_emscripten_bind_ARToolKitCore_getProjectionFarPlane_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_getProjectionFarPlane_0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getFrameBufferRGBA_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_getFrameBufferRGBA_0");
-  _emscripten_bind_ARToolKitCore_getFrameBufferRGBA_0 = Module["_emscripten_bind_ARToolKitCore_getFrameBufferRGBA_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_getFrameBufferRGBA_0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getFrameBufferGRAY_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_getFrameBufferGRAY_0");
-  _emscripten_bind_ARToolKitCore_getFrameBufferGRAY_0 = Module["_emscripten_bind_ARToolKitCore_getFrameBufferGRAY_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_getFrameBufferGRAY_0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getFrameWidth_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_getFrameWidth_0");
-  _emscripten_bind_ARToolKitCore_getFrameWidth_0 = Module["_emscripten_bind_ARToolKitCore_getFrameWidth_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_getFrameWidth_0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getFrameHeight_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_getFrameHeight_0");
-  _emscripten_bind_ARToolKitCore_getFrameHeight_0 = Module["_emscripten_bind_ARToolKitCore_getFrameHeight_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_getFrameHeight_0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_setFrameRGBA_1"], "missing Wasm export: emscripten_bind_ARToolKitCore_setFrameRGBA_1");
-  _emscripten_bind_ARToolKitCore_setFrameRGBA_1 = Module["_emscripten_bind_ARToolKitCore_setFrameRGBA_1"] = createExportWrapper("emscripten_bind_ARToolKitCore_setFrameRGBA_1", 2);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_setFrameGRAY_1"], "missing Wasm export: emscripten_bind_ARToolKitCore_setFrameGRAY_1");
-  _emscripten_bind_ARToolKitCore_setFrameGRAY_1 = Module["_emscripten_bind_ARToolKitCore_setFrameGRAY_1"] = createExportWrapper("emscripten_bind_ARToolKitCore_setFrameGRAY_1", 2);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_detectMarker_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_detectMarker_0");
-  _emscripten_bind_ARToolKitCore_detectMarker_0 = Module["_emscripten_bind_ARToolKitCore_detectMarker_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_detectMarker_0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getMarkerNum_0"], "missing Wasm export: emscripten_bind_ARToolKitCore_getMarkerNum_0");
-  _emscripten_bind_ARToolKitCore_getMarkerNum_0 = Module["_emscripten_bind_ARToolKitCore_getMarkerNum_0"] = createExportWrapper("emscripten_bind_ARToolKitCore_getMarkerNum_0", 1);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getMarkerPose44_2"], "missing Wasm export: emscripten_bind_ARToolKitCore_getMarkerPose44_2");
-  _emscripten_bind_ARToolKitCore_getMarkerPose44_2 = Module["_emscripten_bind_ARToolKitCore_getMarkerPose44_2"] = createExportWrapper("emscripten_bind_ARToolKitCore_getMarkerPose44_2", 3);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getTransMatSquareCont_2"], "missing Wasm export: emscripten_bind_ARToolKitCore_getTransMatSquareCont_2");
-  _emscripten_bind_ARToolKitCore_getTransMatSquareCont_2 = Module["_emscripten_bind_ARToolKitCore_getTransMatSquareCont_2"] = createExportWrapper("emscripten_bind_ARToolKitCore_getTransMatSquareCont_2", 3);
-  assert(wasmExports["emscripten_bind_ARToolKitCore_getTransMatSquare_2"], "missing Wasm export: emscripten_bind_ARToolKitCore_getTransMatSquare_2");
-  _emscripten_bind_ARToolKitCore_getTransMatSquare_2 = Module["_emscripten_bind_ARToolKitCore_getTransMatSquare_2"] = createExportWrapper("emscripten_bind_ARToolKitCore_getTransMatSquare_2", 3);
-  assert(wasmExports["emscripten_bind_ARToolKitCore___destroy___0"], "missing Wasm export: emscripten_bind_ARToolKitCore___destroy___0");
-  _emscripten_bind_ARToolKitCore___destroy___0 = Module["_emscripten_bind_ARToolKitCore___destroy___0"] = createExportWrapper("emscripten_bind_ARToolKitCore___destroy___0", 1);
   assert(wasmExports["fflush"], "missing Wasm export: fflush");
   _fflush = createExportWrapper("fflush", 1);
   assert(wasmExports["emscripten_stack_get_end"], "missing Wasm export: emscripten_stack_get_end");
@@ -4355,6 +5811,31 @@ var wasmImports = {
   /** @export */ __syscall_ioctl: ___syscall_ioctl,
   /** @export */ __syscall_openat: ___syscall_openat,
   /** @export */ _abort_js: __abort_js,
+  /** @export */ _embind_register_bigint: __embind_register_bigint,
+  /** @export */ _embind_register_bool: __embind_register_bool,
+  /** @export */ _embind_register_class: __embind_register_class,
+  /** @export */ _embind_register_class_constructor: __embind_register_class_constructor,
+  /** @export */ _embind_register_class_function: __embind_register_class_function,
+  /** @export */ _embind_register_constant: __embind_register_constant,
+  /** @export */ _embind_register_emval: __embind_register_emval,
+  /** @export */ _embind_register_float: __embind_register_float,
+  /** @export */ _embind_register_integer: __embind_register_integer,
+  /** @export */ _embind_register_memory_view: __embind_register_memory_view,
+  /** @export */ _embind_register_std_string: __embind_register_std_string,
+  /** @export */ _embind_register_std_wstring: __embind_register_std_wstring,
+  /** @export */ _embind_register_void: __embind_register_void,
+  /** @export */ _emval_array_to_memory_view: __emval_array_to_memory_view,
+  /** @export */ _emval_create_invoker: __emval_create_invoker,
+  /** @export */ _emval_decref: __emval_decref,
+  /** @export */ _emval_get_property: __emval_get_property,
+  /** @export */ _emval_incref: __emval_incref,
+  /** @export */ _emval_invoke: __emval_invoke,
+  /** @export */ _emval_new_array: __emval_new_array,
+  /** @export */ _emval_new_cstring: __emval_new_cstring,
+  /** @export */ _emval_new_object: __emval_new_object,
+  /** @export */ _emval_run_destructors: __emval_run_destructors,
+  /** @export */ _emval_set_property: __emval_set_property,
+  /** @export */ emscripten_asm_const_int: _emscripten_asm_const_int,
   /** @export */ emscripten_console_error: _emscripten_console_error,
   /** @export */ emscripten_console_warn: _emscripten_console_warn,
   /** @export */ emscripten_resize_heap: _emscripten_resize_heap,
@@ -4416,6 +5897,17 @@ function invoke_vi(index, a1) {
   }
 }
 
+function invoke_viii(index, a1, a2, a3) {
+  var sp = stackSave();
+  try {
+    getWasmTableEntry(index)(a1, a2, a3);
+  } catch (e) {
+    stackRestore(sp);
+    if (!(e instanceof EmscriptenEH)) throw e;
+    _setThrew(1, 0);
+  }
+}
+
 function invoke_viiii(index, a1, a2, a3, a4) {
   var sp = stackSave();
   try {
@@ -4431,17 +5923,6 @@ function invoke_vii(index, a1, a2) {
   var sp = stackSave();
   try {
     getWasmTableEntry(index)(a1, a2);
-  } catch (e) {
-    stackRestore(sp);
-    if (!(e instanceof EmscriptenEH)) throw e;
-    _setThrew(1, 0);
-  }
-}
-
-function invoke_viii(index, a1, a2, a3) {
-  var sp = stackSave();
-  try {
-    getWasmTableEntry(index)(a1, a2, a3);
   } catch (e) {
     stackRestore(sp);
     if (!(e instanceof EmscriptenEH)) throw e;
@@ -4549,509 +6030,6 @@ wasmExports = await (createWasm());
 run();
 
 // end include: postamble.js
-// include: /src/build/webidl/ARToolKitCore_glue.js
-// Bindings utilities
-/** @suppress {duplicate} (TODO: avoid emitting this multiple times, it is redundant) */ function WrapperObject() {}
-
-WrapperObject.prototype = Object.create(WrapperObject.prototype);
-
-WrapperObject.prototype.constructor = WrapperObject;
-
-WrapperObject.prototype.__class__ = WrapperObject;
-
-WrapperObject.__cache__ = {};
-
-Module["WrapperObject"] = WrapperObject;
-
-/** @suppress {duplicate} (TODO: avoid emitting this multiple times, it is redundant)
-    @param {*=} __class__ */ function getCache(__class__) {
-  return (__class__ || WrapperObject).__cache__;
-}
-
-Module["getCache"] = getCache;
-
-/** @suppress {duplicate} (TODO: avoid emitting this multiple times, it is redundant)
-    @param {*=} __class__ */ function wrapPointer(ptr, __class__) {
-  var cache = getCache(__class__);
-  var ret = cache[ptr];
-  if (ret) return ret;
-  ret = Object.create((__class__ || WrapperObject).prototype);
-  ret.ptr = ptr;
-  return cache[ptr] = ret;
-}
-
-Module["wrapPointer"] = wrapPointer;
-
-/** @suppress {duplicate} (TODO: avoid emitting this multiple times, it is redundant) */ function castObject(obj, __class__) {
-  return wrapPointer(obj.ptr, __class__);
-}
-
-Module["castObject"] = castObject;
-
-Module["NULL"] = wrapPointer(0);
-
-/** @suppress {duplicate} (TODO: avoid emitting this multiple times, it is redundant) */ function destroy(obj) {
-  if (!obj["__destroy__"]) throw "Error: Cannot destroy object. (Did you create it yourself?)";
-  obj["__destroy__"]();
-  // Remove from cache, so the object can be GC'd and refs added onto it released
-  delete getCache(obj.__class__)[obj.ptr];
-}
-
-Module["destroy"] = destroy;
-
-/** @suppress {duplicate} (TODO: avoid emitting this multiple times, it is redundant) */ function compare(obj1, obj2) {
-  return obj1.ptr === obj2.ptr;
-}
-
-Module["compare"] = compare;
-
-/** @suppress {duplicate} (TODO: avoid emitting this multiple times, it is redundant) */ function getPointer(obj) {
-  return obj.ptr;
-}
-
-Module["getPointer"] = getPointer;
-
-/** @suppress {duplicate} (TODO: avoid emitting this multiple times, it is redundant) */ function getClass(obj) {
-  return obj.__class__;
-}
-
-Module["getClass"] = getClass;
-
-// Converts big (string or array) values into a C-style storage, in temporary space
-/** @suppress {duplicate} (TODO: avoid emitting this multiple times, it is redundant) */ var ensureCache = {
-  buffer: 0,
-  // the main buffer of temporary storage
-  size: 0,
-  // the size of buffer
-  pos: 0,
-  // the next free offset in buffer
-  temps: [],
-  // extra allocations
-  needed: 0,
-  // the total size we need next time
-  prepare() {
-    if (ensureCache.needed) {
-      // clear the temps
-      for (var i = 0; i < ensureCache.temps.length; i++) {
-        Module["_webidl_free"](ensureCache.temps[i]);
-      }
-      ensureCache.temps.length = 0;
-      // prepare to allocate a bigger buffer
-      Module["_webidl_free"](ensureCache.buffer);
-      ensureCache.buffer = 0;
-      ensureCache.size += ensureCache.needed;
-      // clean up
-      ensureCache.needed = 0;
-    }
-    if (!ensureCache.buffer) {
-      // happens first time, or when we need to grow
-      ensureCache.size += 128;
-      // heuristic, avoid many small grow events
-      ensureCache.buffer = Module["_webidl_malloc"](ensureCache.size);
-      assert(ensureCache.buffer);
-    }
-    ensureCache.pos = 0;
-  },
-  alloc(array, view) {
-    assert(ensureCache.buffer);
-    var bytes = view.BYTES_PER_ELEMENT;
-    var len = array.length * bytes;
-    len = alignMemory(len, 8);
-    // keep things aligned to 8 byte boundaries
-    var ret;
-    if (ensureCache.pos + len >= ensureCache.size) {
-      // we failed to allocate in the buffer, ensureCache time around :(
-      assert(len > 0);
-      // null terminator, at least
-      ensureCache.needed += len;
-      ret = Module["_webidl_malloc"](len);
-      ensureCache.temps.push(ret);
-    } else {
-      // we can allocate in the buffer
-      ret = ensureCache.buffer + ensureCache.pos;
-      ensureCache.pos += len;
-    }
-    return ret;
-  }
-};
-
-/** @suppress {duplicate} (TODO: avoid emitting this multiple times, it is redundant) */ function ensureString(value) {
-  if (typeof value === "string") {
-    var intArray = intArrayFromString(value);
-    var offset = ensureCache.alloc(intArray, HEAP8);
-    for (var i = 0; i < intArray.length; i++) {
-      HEAP8[offset + i] = intArray[i];
-    }
-    return offset;
-  }
-  return value;
-}
-
-// Interface: VoidPtr
-/** @suppress {undefinedVars, duplicate} @this{Object} */ function VoidPtr() {
-  throw "cannot construct a VoidPtr, no constructor in IDL";
-}
-
-VoidPtr.prototype = Object.create(WrapperObject.prototype);
-
-VoidPtr.prototype.constructor = VoidPtr;
-
-VoidPtr.prototype.__class__ = VoidPtr;
-
-VoidPtr.__cache__ = {};
-
-Module["VoidPtr"] = VoidPtr;
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ VoidPtr.prototype["__destroy__"] = VoidPtr.prototype.__destroy__ = function() {
-  var self = this.ptr;
-  _emscripten_bind_VoidPtr___destroy___0(self);
-};
-
-// Interface: ARToolKitCore
-/** @suppress {undefinedVars, duplicate} @this{Object} */ function ARToolKitCore() {
-  this.ptr = _emscripten_bind_ARToolKitCore_ARToolKitCore_0();
-  getCache(ARToolKitCore)[this.ptr] = this;
-}
-
-ARToolKitCore.prototype = Object.create(WrapperObject.prototype);
-
-ARToolKitCore.prototype.constructor = ARToolKitCore;
-
-ARToolKitCore.prototype.__class__ = ARToolKitCore;
-
-ARToolKitCore.__cache__ = {};
-
-Module["ARToolKitCore"] = ARToolKitCore;
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["ERROR_OK_"] = ARToolKitCore.prototype.ERROR_OK_ = function() {
-  return _emscripten_bind_ARToolKitCore_ERROR_OK__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["ERROR_NOT_INITIALIZED_"] = ARToolKitCore.prototype.ERROR_NOT_INITIALIZED_ = function() {
-  return _emscripten_bind_ARToolKitCore_ERROR_NOT_INITIALIZED__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["ERROR_INVALID_ARGUMENT_"] = ARToolKitCore.prototype.ERROR_INVALID_ARGUMENT_ = function() {
-  return _emscripten_bind_ARToolKitCore_ERROR_INVALID_ARGUMENT__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["ERROR_ARCONTROLLER_NOT_FOUND_"] = ARToolKitCore.prototype.ERROR_ARCONTROLLER_NOT_FOUND_ = function() {
-  return _emscripten_bind_ARToolKitCore_ERROR_ARCONTROLLER_NOT_FOUND__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["ERROR_MARKER_INDEX_OUT_OF_BOUNDS_"] = ARToolKitCore.prototype.ERROR_MARKER_INDEX_OUT_OF_BOUNDS_ = function() {
-  return _emscripten_bind_ARToolKitCore_ERROR_MARKER_INDEX_OUT_OF_BOUNDS__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_DEBUG_DISABLE_"] = ARToolKitCore.prototype.AR_DEBUG_DISABLE_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_DEBUG_DISABLE__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_DEBUG_ENABLE_"] = ARToolKitCore.prototype.AR_DEBUG_ENABLE_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_DEBUG_ENABLE__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_DEFAULT_LABELING_THRESH_"] = ARToolKitCore.prototype.AR_DEFAULT_LABELING_THRESH_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_DEFAULT_LABELING_THRESH__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_IMAGE_PROC_FRAME_IMAGE_"] = ARToolKitCore.prototype.AR_IMAGE_PROC_FRAME_IMAGE_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FRAME_IMAGE__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_IMAGE_PROC_FIELD_IMAGE_"] = ARToolKitCore.prototype.AR_IMAGE_PROC_FIELD_IMAGE_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_IMAGE_PROC_FIELD_IMAGE__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_DEFAULT_IMAGE_PROC_MODE_"] = ARToolKitCore.prototype.AR_DEFAULT_IMAGE_PROC_MODE_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_DEFAULT_IMAGE_PROC_MODE__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_MAX_LOOP_COUNT_"] = ARToolKitCore.prototype.AR_MAX_LOOP_COUNT_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_MAX_LOOP_COUNT__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_LOOP_BREAK_THRESH_"] = ARToolKitCore.prototype.AR_LOOP_BREAK_THRESH_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_LOOP_BREAK_THRESH__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_LOG_LEVEL_DEBUG_"] = ARToolKitCore.prototype.AR_LOG_LEVEL_DEBUG_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_DEBUG__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_LOG_LEVEL_INFO_"] = ARToolKitCore.prototype.AR_LOG_LEVEL_INFO_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_INFO__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_LOG_LEVEL_WARN_"] = ARToolKitCore.prototype.AR_LOG_LEVEL_WARN_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_WARN__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_LOG_LEVEL_ERROR_"] = ARToolKitCore.prototype.AR_LOG_LEVEL_ERROR_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_ERROR__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_LOG_LEVEL_REL_INFO_"] = ARToolKitCore.prototype.AR_LOG_LEVEL_REL_INFO_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_LOG_LEVEL_REL_INFO__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_LABELING_THRESH_MODE_MANUAL_"] = ARToolKitCore.prototype.AR_LABELING_THRESH_MODE_MANUAL_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_MANUAL__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_LABELING_THRESH_MODE_AUTO_MEDIAN_"] = ARToolKitCore.prototype.AR_LABELING_THRESH_MODE_AUTO_MEDIAN_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_MEDIAN__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_LABELING_THRESH_MODE_AUTO_OTSU_"] = ARToolKitCore.prototype.AR_LABELING_THRESH_MODE_AUTO_OTSU_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_OTSU__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_LABELING_THRESH_MODE_AUTO_ADAPTIVE_"] = ARToolKitCore.prototype.AR_LABELING_THRESH_MODE_AUTO_ADAPTIVE_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_LABELING_THRESH_MODE_AUTO_ADAPTIVE__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_MARKER_INFO_CUTOFF_PHASE_NONE_"] = ARToolKitCore.prototype.AR_MARKER_INFO_CUTOFF_PHASE_NONE_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_NONE__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_MARKER_INFO_CUTOFF_PHASE_PATTERN_EXTRACTION_"] = ARToolKitCore.prototype.AR_MARKER_INFO_CUTOFF_PHASE_PATTERN_EXTRACTION_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_PATTERN_EXTRACTION__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_MARKER_INFO_CUTOFF_PHASE_MATCH_GENERIC_"] = ARToolKitCore.prototype.AR_MARKER_INFO_CUTOFF_PHASE_MATCH_GENERIC_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_GENERIC__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONTRAST_"] = ARToolKitCore.prototype.AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONTRAST_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONTRAST__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_NOT_FOUND_"] = ARToolKitCore.prototype.AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_NOT_FOUND_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_NOT_FOUND__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_EDC_FAIL_"] = ARToolKitCore.prototype.AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_EDC_FAIL_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_BARCODE_EDC_FAIL__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONFIDENCE_"] = ARToolKitCore.prototype.AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONFIDENCE_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_MATCH_CONFIDENCE__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_"] = ARToolKitCore.prototype.AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_MULTI_"] = ARToolKitCore.prototype.AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_MULTI_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_POSE_ERROR_MULTI__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES_"] = ARToolKitCore.prototype.AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES_ = function() {
-  return _emscripten_bind_ARToolKitCore_AR_MARKER_INFO_CUTOFF_PHASE_HEURISTIC_TROUBLESOME_MATRIX_CODES__0();
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["setup"] = ARToolKitCore.prototype.setup = function(width, height, cameraID) {
-  var self = this.ptr;
-  if (width && typeof width === "object") width = width.ptr;
-  if (height && typeof height === "object") height = height.ptr;
-  if (cameraID && typeof cameraID === "object") cameraID = cameraID.ptr;
-  return _emscripten_bind_ARToolKitCore_setup_3(self, width, height, cameraID);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["teardown"] = ARToolKitCore.prototype.teardown = function() {
-  var self = this.ptr;
-  return _emscripten_bind_ARToolKitCore_teardown_0(self);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["loadCameraFromPath"] = ARToolKitCore.prototype.loadCameraFromPath = function(cparamPath) {
-  var self = this.ptr;
-  ensureCache.prepare();
-  if (cparamPath && typeof cparamPath === "object") cparamPath = cparamPath.ptr; else cparamPath = ensureString(cparamPath);
-  return _emscripten_bind_ARToolKitCore_loadCameraFromPath_1(self, cparamPath);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["loadCameraFromBuffer"] = ARToolKitCore.prototype.loadCameraFromBuffer = function(dataPtr, dataLen) {
-  var self = this.ptr;
-  if (dataPtr && typeof dataPtr === "object") dataPtr = dataPtr.ptr;
-  if (dataLen && typeof dataLen === "object") dataLen = dataLen.ptr;
-  return _emscripten_bind_ARToolKitCore_loadCameraFromBuffer_2(self, dataPtr, dataLen);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getCameraLens"] = ARToolKitCore.prototype.getCameraLens = function(outPtr) {
-  var self = this.ptr;
-  if (outPtr && typeof outPtr === "object") outPtr = outPtr.ptr;
-  _emscripten_bind_ARToolKitCore_getCameraLens_1(self, outPtr);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["addMarker"] = ARToolKitCore.prototype.addMarker = function(pattName) {
-  var self = this.ptr;
-  ensureCache.prepare();
-  if (pattName && typeof pattName === "object") pattName = pattName.ptr; else pattName = ensureString(pattName);
-  return _emscripten_bind_ARToolKitCore_addMarker_1(self, pattName);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["addPatternFromBuffer"] = ARToolKitCore.prototype.addPatternFromBuffer = function(pattPtr, pattLen) {
-  var self = this.ptr;
-  if (pattPtr && typeof pattPtr === "object") pattPtr = pattPtr.ptr;
-  if (pattLen && typeof pattLen === "object") pattLen = pattLen.ptr;
-  return _emscripten_bind_ARToolKitCore_addPatternFromBuffer_2(self, pattPtr, pattLen);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getMarkerInfo"] = ARToolKitCore.prototype.getMarkerInfo = function(index) {
-  var self = this.ptr;
-  if (index && typeof index === "object") index = index.ptr;
-  return _emscripten_bind_ARToolKitCore_getMarkerInfo_1(self, index);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["setMarkerInfoDir"] = ARToolKitCore.prototype.setMarkerInfoDir = function(markerIndex, dir) {
-  var self = this.ptr;
-  if (markerIndex && typeof markerIndex === "object") markerIndex = markerIndex.ptr;
-  if (dir && typeof dir === "object") dir = dir.ptr;
-  return _emscripten_bind_ARToolKitCore_setMarkerInfoDir_2(self, markerIndex, dir);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["setMatrixCodeType"] = ARToolKitCore.prototype.setMatrixCodeType = function(type) {
-  var self = this.ptr;
-  if (type && typeof type === "object") type = type.ptr;
-  _emscripten_bind_ARToolKitCore_setMatrixCodeType_1(self, type);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["setThreshold"] = ARToolKitCore.prototype.setThreshold = function(threshold) {
-  var self = this.ptr;
-  if (threshold && typeof threshold === "object") threshold = threshold.ptr;
-  _emscripten_bind_ARToolKitCore_setThreshold_1(self, threshold);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getThreshold"] = ARToolKitCore.prototype.getThreshold = function() {
-  var self = this.ptr;
-  return _emscripten_bind_ARToolKitCore_getThreshold_0(self);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["setThresholdMode"] = ARToolKitCore.prototype.setThresholdMode = function(mode) {
-  var self = this.ptr;
-  if (mode && typeof mode === "object") mode = mode.ptr;
-  _emscripten_bind_ARToolKitCore_setThresholdMode_1(self, mode);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getThresholdMode"] = ARToolKitCore.prototype.getThresholdMode = function() {
-  var self = this.ptr;
-  return _emscripten_bind_ARToolKitCore_getThresholdMode_0(self);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["setDebugMode"] = ARToolKitCore.prototype.setDebugMode = function(enable) {
-  var self = this.ptr;
-  if (enable && typeof enable === "object") enable = enable.ptr;
-  _emscripten_bind_ARToolKitCore_setDebugMode_1(self, enable);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getDebugMode"] = ARToolKitCore.prototype.getDebugMode = function() {
-  var self = this.ptr;
-  return _emscripten_bind_ARToolKitCore_getDebugMode_0(self);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["setImageProcMode"] = ARToolKitCore.prototype.setImageProcMode = function(mode) {
-  var self = this.ptr;
-  if (mode && typeof mode === "object") mode = mode.ptr;
-  _emscripten_bind_ARToolKitCore_setImageProcMode_1(self, mode);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getImageProcMode"] = ARToolKitCore.prototype.getImageProcMode = function() {
-  var self = this.ptr;
-  return _emscripten_bind_ARToolKitCore_getImageProcMode_0(self);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["setProjectionNearPlane"] = ARToolKitCore.prototype.setProjectionNearPlane = function(nearPlane) {
-  var self = this.ptr;
-  if (nearPlane && typeof nearPlane === "object") nearPlane = nearPlane.ptr;
-  _emscripten_bind_ARToolKitCore_setProjectionNearPlane_1(self, nearPlane);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getProjectionNearPlane"] = ARToolKitCore.prototype.getProjectionNearPlane = function() {
-  var self = this.ptr;
-  return _emscripten_bind_ARToolKitCore_getProjectionNearPlane_0(self);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["setProjectionFarPlane"] = ARToolKitCore.prototype.setProjectionFarPlane = function(farPlane) {
-  var self = this.ptr;
-  if (farPlane && typeof farPlane === "object") farPlane = farPlane.ptr;
-  _emscripten_bind_ARToolKitCore_setProjectionFarPlane_1(self, farPlane);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getProjectionFarPlane"] = ARToolKitCore.prototype.getProjectionFarPlane = function() {
-  var self = this.ptr;
-  return _emscripten_bind_ARToolKitCore_getProjectionFarPlane_0(self);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getFrameBufferRGBA"] = ARToolKitCore.prototype.getFrameBufferRGBA = function() {
-  var self = this.ptr;
-  return _emscripten_bind_ARToolKitCore_getFrameBufferRGBA_0(self);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getFrameBufferGRAY"] = ARToolKitCore.prototype.getFrameBufferGRAY = function() {
-  var self = this.ptr;
-  return _emscripten_bind_ARToolKitCore_getFrameBufferGRAY_0(self);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getFrameWidth"] = ARToolKitCore.prototype.getFrameWidth = function() {
-  var self = this.ptr;
-  return _emscripten_bind_ARToolKitCore_getFrameWidth_0(self);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getFrameHeight"] = ARToolKitCore.prototype.getFrameHeight = function() {
-  var self = this.ptr;
-  return _emscripten_bind_ARToolKitCore_getFrameHeight_0(self);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["setFrameRGBA"] = ARToolKitCore.prototype.setFrameRGBA = function(dataPtr) {
-  var self = this.ptr;
-  if (dataPtr && typeof dataPtr === "object") dataPtr = dataPtr.ptr;
-  return _emscripten_bind_ARToolKitCore_setFrameRGBA_1(self, dataPtr);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["setFrameGRAY"] = ARToolKitCore.prototype.setFrameGRAY = function(dataPtr) {
-  var self = this.ptr;
-  if (dataPtr && typeof dataPtr === "object") dataPtr = dataPtr.ptr;
-  return _emscripten_bind_ARToolKitCore_setFrameGRAY_1(self, dataPtr);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["detectMarker"] = ARToolKitCore.prototype.detectMarker = function() {
-  var self = this.ptr;
-  return _emscripten_bind_ARToolKitCore_detectMarker_0(self);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getMarkerNum"] = ARToolKitCore.prototype.getMarkerNum = function() {
-  var self = this.ptr;
-  return _emscripten_bind_ARToolKitCore_getMarkerNum_0(self);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getMarkerPose44"] = ARToolKitCore.prototype.getMarkerPose44 = function(index, outPtr) {
-  var self = this.ptr;
-  if (index && typeof index === "object") index = index.ptr;
-  if (outPtr && typeof outPtr === "object") outPtr = outPtr.ptr;
-  return _emscripten_bind_ARToolKitCore_getMarkerPose44_2(self, index, outPtr);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getTransMatSquareCont"] = ARToolKitCore.prototype.getTransMatSquareCont = function(markerIndex, markerWidth) {
-  var self = this.ptr;
-  if (markerIndex && typeof markerIndex === "object") markerIndex = markerIndex.ptr;
-  if (markerWidth && typeof markerWidth === "object") markerWidth = markerWidth.ptr;
-  return _emscripten_bind_ARToolKitCore_getTransMatSquareCont_2(self, markerIndex, markerWidth);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["getTransMatSquare"] = ARToolKitCore.prototype.getTransMatSquare = function(markerIndex, markerWidth) {
-  var self = this.ptr;
-  if (markerIndex && typeof markerIndex === "object") markerIndex = markerIndex.ptr;
-  if (markerWidth && typeof markerWidth === "object") markerWidth = markerWidth.ptr;
-  return _emscripten_bind_ARToolKitCore_getTransMatSquare_2(self, markerIndex, markerWidth);
-};
-
-/** @suppress {undefinedVars, duplicate} @this{Object} */ ARToolKitCore.prototype["__destroy__"] = ARToolKitCore.prototype.__destroy__ = function() {
-  var self = this.ptr;
-  _emscripten_bind_ARToolKitCore___destroy___0(self);
-};
-
-// end include: /src/build/webidl/ARToolKitCore_glue.js
 // include: postamble_modularize.js
 // In MODULARIZE mode we wrap the generated code in a factory function
 // and return either the Module itself, or a promise of the module.
