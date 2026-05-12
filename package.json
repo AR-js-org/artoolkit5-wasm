@@ -33,7 +33,12 @@
     "lint:cpp": "node scripts/clang-format.mjs --lint",
     "format:cpp": "node scripts/clang-format.mjs"
   },
+  "dependencies": {
+    "artoolkit5-constants": "git+https://github.com/kalwalt/artoolkit5-constants.git#main"
+  },
   "devDependencies": {
+    "clang-format": "^1.8.0",
+    "glob": "^13.0.6",
     "typescript": "^5.9.3",
     "vite": "^7.3.1"
   }

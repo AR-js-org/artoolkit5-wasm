@@ -8,13 +8,16 @@
 
 <script type="module">
   import createModule from "./../dist/artoolkit5.js";
-  import { loadCameraFromUrl, addMarkerFromUrl } from "./../dist/index.js"
+  import { loadCameraFromUrl, addMarkerFromUrl, createARToolKit } from "./../dist/index.js"
 
   const mod = await createModule({
     locateFile(path) {
       return "./../dist/" + path; // risolve artoolkit5.wasm
     },
   });
+
+  const artk = await createARToolKit(mod);
+  console.log("artk:", artk);
 
   console.log("Loaded", mod);
   console.log("HEAPU8 length:", mod.HEAPU8?.length);
@@ -23,16 +26,35 @@
   const width = 640;
   const height = 480;
 
+  console.log("mod: ", mod);
+  
+
   const core = new mod.ARToolKitCore();
-  const cameraId = await loadCameraFromUrl(mod, core, "./data/camera_para.dat");
-  await core.setup(width, height, cameraId);   // pick your width/height
-  const patt_id = await addMarkerFromUrl(mod, core, "./data/patt.hiro");
-  console.log("patt_id:", patt_id);
+  try {
+    console.log("Loading camera...");
+    const cameraId = await loadCameraFromUrl(mod, core, "./data/camera_para.dat");
+    console.log("Camera loaded, ID:", cameraId);
+
+    console.log("Running core.setup...");
+    await core.setup(width, height, cameraId);
+    console.log("core.setup complete");
+
+    console.log("Loading marker...");
+    const patt_id = await addMarkerFromUrl(mod, core, "./data/patt.hiro");
+    console.log("Marker loaded, ID:", patt_id);
+  } catch (e) {
+    console.error("Error during ARToolKit setup:", e);
+    throw e;
+  }
 
   console.log(core)
   console.log("AR_DEBUG_ENABLE:", mod.AR_DEBUG_ENABLE);
   console.log("LOG_DEBUG:", mod.AR_LOG_LEVEL_DEBUG);
   console.log("THRESH_MANUAL:", mod.AR_LABELING_THRESH_MODE_MANUAL);
+
+
+  console.log("AR_DEBUG_DISABLE from artk: ", artk.constants.AR_DEBUG_DISABLE);
+  
 
   console.log("instance keys", Object.getOwnPropertyNames(core));
   console.log("proto keys", Object.getOwnPropertyNames(Object.getPrototypeOf(core)));
