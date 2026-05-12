@@ -34,7 +34,7 @@
     "format:cpp": "node scripts/clang-format.mjs"
   },
   "dependencies": {
-    "artoolkit5-constants": "git+https://github.com/kalwalt/artoolkit5-constants.git#main"
+    "artoolkit5-constants": "git+https://github.com/AR-js-org/artoolkit5-constants.git#f10fe01cddc0fcbf90af02a1477d03364a3c4125"
   },
   "devDependencies": {
     "clang-format": "^1.8.0",
