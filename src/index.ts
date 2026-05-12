@@ -1,6 +1,18 @@
 // src/index.ts
 import createEmscriptenModule from "../dist/artoolkit5.js";
 import { loadCameraFromUrl, addMarkerFromUrl } from './loader.js';
+import {
+    AR_DEBUG_DISABLE,
+    AR_DEBUG_ENABLE,
+    AR_LOG_LEVEL_DEBUG,
+    AR_LOG_LEVEL_INFO,
+    AR_LOG_LEVEL_WARN,
+    AR_LOG_LEVEL_ERROR,
+    AR_LOG_LEVEL_REL_INFO,
+    AR_PIXEL_FORMAT_RGBA,
+    AR_MATRIX_CODE_DETECTION,
+    AR_PIXEL_FORMAT_MONO
+} from 'artoolkit5-constants';
 
 export type LocateFile = (path: string, prefix: string) => string;
 
@@ -23,14 +35,18 @@ export async function createARToolKit(opts: CreateARToolKitOptions = {}) {
 
     // “freeze” per evitare mutazioni accidentali.
     const constants = Object.freeze({
-        AR_DEBUG_DISABLE: mod.AR_DEBUG_DISABLE,
-        AR_DEBUG_ENABLE: mod.AR_DEBUG_ENABLE,
+        AR_DEBUG_DISABLE: AR_DEBUG_DISABLE,
+        AR_DEBUG_ENABLE: AR_DEBUG_ENABLE,
 
-        AR_LOG_LEVEL_DEBUG: mod.AR_LOG_LEVEL_DEBUG,
-        AR_LOG_LEVEL_INFO: mod.AR_LOG_LEVEL_INFO,
-        AR_LOG_LEVEL_WARN: mod.AR_LOG_LEVEL_WARN,
-        AR_LOG_LEVEL_ERROR: mod.AR_LOG_LEVEL_ERROR,
-        AR_LOG_LEVEL_REL_INFO: mod.AR_LOG_LEVEL_REL_INFO,
+        AR_LOG_LEVEL_DEBUG: AR_LOG_LEVEL_DEBUG,
+        AR_LOG_LEVEL_INFO: AR_LOG_LEVEL_INFO,
+        AR_LOG_LEVEL_WARN: AR_LOG_LEVEL_WARN,
+        AR_LOG_LEVEL_ERROR: AR_LOG_LEVEL_ERROR,
+        AR_LOG_LEVEL_REL_INFO: AR_LOG_LEVEL_REL_INFO,
+
+        AR_PIXEL_FORMAT_RGBA: AR_PIXEL_FORMAT_RGBA,
+        AR_PIXEL_FORMAT_MONO: AR_PIXEL_FORMAT_MONO,
+        AR_MATRIX_CODE_DETECTION: AR_MATRIX_CODE_DETECTION,
 
         UNKNOWN_MARKER,
         PATTERN_MARKER,

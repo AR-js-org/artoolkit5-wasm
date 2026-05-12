@@ -13,7 +13,18 @@ async function fetchBinary(url: string): Promise<Uint8Array> {
 function ensureDir(fs: any, vpath: string) {
   const dir = vpath.substring(0, vpath.lastIndexOf('/')) || '/';
   if (dir !== '/') {
-    try { fs.mkdir(dir); } catch (e: any) { if (e.code !== 'EEXIST') throw e; }
+    try {
+      if (!fs.analyzePath(dir).exists) {
+        console.log(`Creating virtual directory: ${dir}`);
+        fs.mkdir(dir);
+      }
+    } catch (e: any) {
+      // In Emscripten, e.errno might be 17 (EEXIST)
+      if (e.errno !== 17 && e.code !== 'EEXIST') {
+        console.error(`Error creating directory ${dir}:`, e);
+        throw e;
+      }
+    }
   }
 }
 
