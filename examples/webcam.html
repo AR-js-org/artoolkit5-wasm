@@ -43,7 +43,7 @@
 
     <script type="module">
         import createModule from "./../dist/artoolkit5.js";
-        import { fetchBinary, storeDataFile, loadCameraFromUrl, addMarker } from "./utils.js";
+        import { loadCameraFromUrl, addMarkerFromUrl } from "./../dist/index.js";
 
         const cameraParam = '../data/camera_para.dat';   // adjust path
         const markerPatt = '../data/patt.hiro';         // adjust path
@@ -100,63 +100,42 @@
             });
 
             const core = new mod.ARToolKitCore();
-            const cameraId = await loadCameraFromUrl(mod, core, "./data/camera_para.dat");
-            await core.setup(width, height, cameraId);   // pick your width/height
-            const patt_id = await addMarker(mod, core, "./data/patt.hiro");
-            console.log("patt_id:", patt_id);
+            console.log("core: ", core);
+            try {
+                const cameraId = await loadCameraFromUrl(mod, core, "./data/camera_para.dat");
+                await core.setup(width, height, cameraId);   // pick your width/height
+                const patt_id = await addMarkerFromUrl(mod, core, "./data/patt.hiro");
+                console.log("patt_id:", patt_id);
 
-            const rgbaSize = width * height * 4;
-            const rgbaPtr = mod._malloc(rgbaSize);
-            const grayPtr = mod._malloc(width * height);
+                const process = function () {
+                    context_process.fillStyle = "black";
+                    context_process.fillRect(0, 0, width, height);
+                    context_process.drawImage(video, 0, 0, width, height);
 
-            let heapBuffer = mod.HEAPU8.buffer;
-            let rgbaView = new Uint8Array(heapBuffer, rgbaPtr, rgbaSize);
-            let grayView = new Uint8Array(heapBuffer, grayPtr, width * height);
+                    const imageData = context_process.getImageData(0, 0, width, height);
+                    
+                    core.passVideoData(imageData.data, [], true);
+                };
 
-            const refreshViews = () => {
-                if (heapBuffer !== mod.HEAPU8.buffer) {
-                    heapBuffer = mod.HEAPU8.buffer;
-                    rgbaView = new Uint8Array(heapBuffer, rgbaPtr, rgbaSize);
-                    grayView = new Uint8Array(heapBuffer, grayPtr, width * height);
+                function tick() {
+                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                        process()
+                    }
+                    requestAnimationFrame(tick);
                 }
-            };
+                tick();
 
-            const process = function () {
-                refreshViews();
-
-                context_process.fillStyle = "black";
-                context_process.fillRect(0, 0, width, height);
-                context_process.drawImage(video, 0, 0, width, height);
-
-                const imageData = context_process.getImageData(0, 0, width, height);
-                convert2gray(imageData.data, grayView, width * height);
-
-                rgbaView.set(imageData.data);
-                core.setFrameRGBA(rgbaPtr, rgbaSize);
-                core.setFrameGRAY(grayPtr, width * height);
-            };
-
-            const convert2gray = function (srcRGBA, dstGray, numPixels) {
-                for (let p = 0, q = 0; p < numPixels; p++, q += 4) {
-                    const r = srcRGBA[q], g = srcRGBA[q + 1], b = srcRGBA[q + 2];
-                    dstGray[p] = (r + r + r + b + g + g + g + g) >> 3;
-                }
-                return dstGray;
-            };
+                log('Running. Show the marker to the camera.');
 
 
-            // Main loop
-            function tick() {
-                if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                    process()
-                }
-                requestAnimationFrame(tick);
+
+
+
+            } catch (e) {
+                console.error("Error during ARToolKit setup:", e);
+                throw e;
             }
-            tick();
-
-            log('Running. Show the marker to the camera.');
         }
-
         start().catch((err) => {
             console.error(err);
             log('Error: ' + err.message);
