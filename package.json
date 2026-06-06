@@ -1,6 +1,6 @@
 {
   "name": "@kalwalt/artoolkit5-wasm",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -34,7 +34,7 @@
     "format:cpp": "node scripts/clang-format.mjs"
   },
   "dependencies": {
-    "artoolkit5-constants": "git+https://github.com/AR-js-org/artoolkit5-constants.git#f10fe01cddc0fcbf90af02a1477d03364a3c4125"
+    "@ar-js-org/artoolkit5-constants": "^0.1.0"
   },
   "devDependencies": {
     "clang-format": "^1.8.0",
