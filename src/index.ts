@@ -12,7 +12,7 @@ import {
     AR_PIXEL_FORMAT_RGBA,
     AR_MATRIX_CODE_DETECTION,
     AR_PIXEL_FORMAT_MONO
-} from 'artoolkit5-constants';
+} from '@ar-js-org/artoolkit5-constants';
 
 export type LocateFile = (path: string, prefix: string) => string;
 
@@ -51,8 +51,6 @@ export async function createARToolKit(opts: CreateARToolKitOptions = {}) {
         UNKNOWN_MARKER,
         PATTERN_MARKER,
         BARCODE_MARKER,
-
-        // ... (tutte le altre che ti servono)
     } as const);
 
     return { mod, core, constants };
