@@ -3,6 +3,7 @@ export type LocateFile = (path: string, prefix: string) => string;
 export interface CreateARToolKitOptions {
     locateFile?: LocateFile;
     wasmBinary?: ArrayBuffer | Uint8Array;
+    quiet?: boolean;
 }
 export declare function createARToolKit(opts?: CreateARToolKitOptions): Promise<{
     mod: any;

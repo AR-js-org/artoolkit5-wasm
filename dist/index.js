@@ -1,40 +1,41 @@
 import _ from "../dist/artoolkit5.js";
-async function i(r) {
-  const t = await fetch(r);
-  if (!t.ok) throw new Error(`fetch failed ${t.status} ${t.statusText}: ${r}`);
-  return new Uint8Array(await t.arrayBuffer());
+async function E(t) {
+  const r = await fetch(t);
+  if (!r.ok) throw new Error(`fetch failed ${r.status} ${r.statusText}: ${t}`);
+  return new Uint8Array(await r.arrayBuffer());
 }
-function E(r, t) {
-  const a = t.lastIndexOf("/");
-  if (a === -1) return;
-  const n = t.substring(0, a);
+function R(t, r) {
+  const o = r.lastIndexOf("/");
+  if (o === -1) return;
+  const n = r.substring(0, o);
   if (!n || n === "/" || n === ".") return;
-  const e = t.startsWith("/"), c = n.split("/").filter(Boolean);
-  let o = e ? "" : ".";
-  for (const R of c) {
-    o += "/" + R;
+  const a = r.startsWith("/"), c = n.split("/").filter(Boolean);
+  let e = a ? "" : ".";
+  for (const i of c) {
+    e += "/" + i;
     try {
-      r.analyzePath(o).exists || r.mkdir(o);
+      t.analyzePath(e).exists || t.mkdir(e);
     } catch (s) {
       if (s.errno !== 17 && s.code !== "EEXIST")
         throw s;
     }
   }
 }
-async function M(r, t, a, n = "/data/camera_para.dat") {
-  const e = await i(a);
-  return E(r.FS, n), r.FS.writeFile(n, e), t._loadCamera(n);
+async function M(t, r, o, n = "/data/camera_para.dat") {
+  const a = await E(o);
+  return R(t.FS, n), t.FS.writeFile(n, a), r._loadCamera(n);
 }
-async function T(r, t, a, n = "/data/patt.hiro") {
-  const e = await i(a);
-  return E(r.FS, n), r.FS.writeFile(n, e), t.addMarker(n);
+async function T(t, r, o, n = "/data/patt.hiro") {
+  const a = await E(o);
+  return R(t.FS, n), t.FS.writeFile(n, a), r.addMarker(n);
 }
 const A = 2, l = 5, f = 2, L = 0, O = 1, u = 0, d = 1, w = 2, F = 3, N = 4;
-async function y(r = {}) {
-  const t = await _({
-    locateFile: r.locateFile,
-    wasmBinary: r.wasmBinary
-  }), a = new t.ARToolKitCore(), o = Object.freeze({
+async function m(t = {}) {
+  t.quiet || console.log("artoolkit5-wasm v0.1.0");
+  const r = await _({
+    locateFile: t.locateFile,
+    wasmBinary: t.wasmBinary
+  }), o = new r.ARToolKitCore(), e = Object.freeze({
     AR_DEBUG_DISABLE: L,
     AR_DEBUG_ENABLE: O,
     AR_LOG_LEVEL_DEBUG: u,
@@ -48,13 +49,12 @@ async function y(r = {}) {
     UNKNOWN_MARKER: -1,
     PATTERN_MARKER: 0,
     BARCODE_MARKER: 1
-    // ... (tutte le altre che ti servono)
   });
-  return { mod: t, core: a, constants: o };
+  return { mod: r, core: o, constants: e };
 }
 export {
   T as addMarkerFromUrl,
-  y as createARToolKit,
+  m as createARToolKit,
   M as loadCameraFromUrl
 };
 //# sourceMappingURL=index.js.map
