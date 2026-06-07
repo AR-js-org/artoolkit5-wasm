@@ -111,6 +111,10 @@
                 const controller = new ARController(mod, core, width, height);
                 controller.trackMarker(patt_id, 1.0);
 
+                // Track detection state to avoid spamming the console on every frame.
+                // We log the detailed matrices only on first detection and when lost.
+                let wasDetected = false;
+
                 const process = function () {
                     context_process.fillStyle = "black";
                     context_process.fillRect(0, 0, width, height);
@@ -119,10 +123,28 @@
                     const imageData = context_process.getImageData(0, 0, width, height);
                     
                     const activeMarkers = controller.process(imageData.data);
-                    for (const marker of activeMarkers) {
-                        console.log(`Detected Marker ID: ${marker.id}`);
-                        console.log(`Pose Matrix (3x4):`, marker.matrix);
-                        console.log(`GL Matrix (4x4):`, marker.matrixGL);
+                    if (activeMarkers.length > 0) {
+                        // The UI DOM element is updated on every frame to show real-time detection status
+                        log("Detected Marker IDs: " + activeMarkers.map(m => m.id).join(", "));
+                        
+                        // Console logs for matrices are output only on the first detection transition
+                        // to avoid console spam and maintain browser rendering performance.
+                        if (!wasDetected) {
+                            for (const marker of activeMarkers) {
+                                console.log(`Detected Marker ID: ${marker.id}`);
+                                console.log(`Pose Matrix (3x4):`, marker.matrix);
+                                console.log(`GL Matrix (4x4):`, marker.matrixGL);
+                            }
+                            wasDetected = true;
+                        }
+                    } else {
+                        log("Running. Show the marker to the camera.");
+                        
+                        // Print to console only when the marker transition to lost occurs
+                        if (wasDetected) {
+                            console.log("Marker lost");
+                            wasDetected = false;
+                        }
                     }
                 };
 

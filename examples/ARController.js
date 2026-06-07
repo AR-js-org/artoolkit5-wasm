@@ -38,8 +38,7 @@ export default class ARController {
     const markerNum = this.core.getMarkerNum();
 
     // Reset current frame states, shift current to previous
-    for (const key in this.patternMarkers) {
-      const marker = this.patternMarkers[key];
+    for (const marker of Object.values(this.patternMarkers)) {
       marker.inPrevious = marker.inCurrent;
       marker.inCurrent = false;
     }
@@ -64,8 +63,17 @@ export default class ARController {
 
         // Copy transform matrix from WASM heap
         const ptr = this.core.getTransform();
-        const heapMatrix = new Float64Array(this.mod.HEAPU8.buffer, ptr, 12);
-        tracked.matrix.set(heapMatrix);
+        // Float64Array requires 8-byte alignment. If ptr is not aligned, fallback to DataView.
+        if (ptr % 8 === 0) {
+          const heapMatrix = new Float64Array(this.mod.HEAPU8.buffer, ptr, 12);
+          tracked.matrix.set(heapMatrix);
+        } else {
+
+          const view = new DataView(this.mod.HEAPU8.buffer, ptr, 96); // 12 * 8 bytes = 96
+          for (let i = 0; i < 12; i++) {
+            tracked.matrix[i] = view.getFloat64(i * 8, true);
+          }
+        }
 
         // Convert to 4x4 GL matrix
         this.transMatToGLMat(tracked.matrix, tracked.matrixGL);

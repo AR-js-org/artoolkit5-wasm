@@ -173,9 +173,10 @@ namespace arjs
         emscripten::val ARToolKitCore::getCameraLens()
         {
             emscripten::val lens = emscripten::val::array();
+            int i = 0;
             for (const auto& value : this->cameraLens)
             {
-                lens.call<void>("push", value);
+                lens.set(i++, value);
             }
             return lens;
         }
@@ -468,8 +469,8 @@ namespace arjs
             info.set("errorCorrected", markerInfo->errorCorrected);
 
             emscripten::val pos = emscripten::val::array();
-            pos.call<void>("push", markerInfo->pos[0]);
-            pos.call<void>("push", markerInfo->pos[1]);
+            pos.set(0, markerInfo->pos[0]);
+            pos.set(1, markerInfo->pos[1]);
             info.set("pos", pos);
 
             emscripten::val line = emscripten::val::array();
@@ -478,9 +479,9 @@ namespace arjs
                 emscripten::val row = emscripten::val::array();
                 for (int j = 0; j < 3; ++j)
                 {
-                    row.call<void>("push", markerInfo->line[i][j]);
+                    row.set(j, markerInfo->line[i][j]);
                 }
-                line.call<void>("push", row);
+                line.set(i, row);
             }
             info.set("line", line);
 
@@ -488,9 +489,9 @@ namespace arjs
             for (int i = 0; i < 4; ++i)
             {
                 emscripten::val v = emscripten::val::array();
-                v.call<void>("push", markerInfo->vertex[i][0]);
-                v.call<void>("push", markerInfo->vertex[i][1]);
-                vertex.call<void>("push", v);
+                v.set(0, markerInfo->vertex[i][0]);
+                v.set(1, markerInfo->vertex[i][1]);
+                vertex.set(i, v);
             }
             info.set("vertex", vertex);
 
