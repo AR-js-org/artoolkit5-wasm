@@ -9,7 +9,7 @@ A high-performance **WebAssembly (WASM)** port of **WebARKitLib**, utilizing a m
 Install the package via `npm`:
 
 ```bash
-npm install @kalwalt/artoolkit5-wasm
+npm install @ar-js-org/artoolkit5-wasm
 ```
 
 ### 🔗 Peer Dependencies
@@ -27,10 +27,10 @@ npm install @ar-js-org/artoolkit5-constants
 Initialize the WebAssembly runtime using the `createARToolKit` factory. You can optionally configure paths for loading the `.wasm` binary:
 
 ```javascript
-import { createARToolKit } from '@kalwalt/artoolkit5-wasm';
+import { createARToolKit } from '@ar-js-org/artoolkit5-wasm';
 
 const { mod, core, constants } = await createARToolKit({
-  locateFile: (path, prefix) => `node_modules/@kalwalt/artoolkit5-wasm/dist/${path}`,
+  locateFile: (path, prefix) => `node_modules/@ar-js-org/artoolkit5-wasm/dist/${path}`,
   quiet: false // Set to true to suppress initialization logs
 });
 ```
@@ -45,7 +45,7 @@ const { mod, core, constants } = await createARToolKit({
 ARToolKit requires camera calibration parameters (`.dat`) and marker pattern (`.hiro` / custom) files. Utility helpers fetch these binaries and load them directly into the Emscripten Virtual File System (`mod.FS`):
 
 ```javascript
-import { loadCameraFromUrl, addMarkerFromUrl } from '@kalwalt/artoolkit5-wasm';
+import { loadCameraFromUrl, addMarkerFromUrl } from '@ar-js-org/artoolkit5-wasm';
 
 // Load camera calibration file
 await loadCameraFromUrl(mod, core, 'path/to/camera_para.dat', '/data/camera_para.dat');
