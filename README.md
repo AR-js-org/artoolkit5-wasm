@@ -1,5 +1,12 @@
 # 🚀 artoolkit5-wasm
 
+[![GitHub stars](https://img.shields.io/github/stars/ar-js-org/artoolkit5-wasm?style=flat-square)](https://github.com/ar-js-org/artoolkit5-wasm/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/ar-js-org/artoolkit5-wasm?style=flat-square)](https://github.com/ar-js-org/artoolkit5-wasm/network/members)
+[![CI](https://github.com/ar-js-org/artoolkit5-wasm/actions/workflows/ci.yml/badge.svg)](https://github.com/ar-js-org/artoolkit5-wasm/actions)
+[![npm version](https://img.shields.io/npm/v/@ar-js-org/artoolkit5-wasm?style=flat-square)](https://www.npmjs.com/package/@ar-js-org/artoolkit5-wasm)
+[![Types](https://img.shields.io/badge/Types-included-blue?style=flat-square)](https://github.com/ar-js-org/artoolkit5-wasm/blob/main/dist/index.d.ts)
+[![License](https://img.shields.io/github/license/ar-js-org/artoolkit5-wasm?style=flat-square)](https://github.com/ar-js-org/artoolkit5-wasm/blob/main/LICENSE)
+
 A high-performance **WebAssembly (WASM)** port of **WebARKitLib**, utilizing a modified and improved version of **ARToolKit5** tailored for modern JavaScript and TypeScript environments. 🎯 This package delivers fast, modular, and memory-optimized marker tracking, pose estimation, and marker generation directly in the web browser or Node.js.
 
 ---
