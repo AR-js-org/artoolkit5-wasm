@@ -1,5 +1,5 @@
 {
-  "name": "@kalwalt/artoolkit5-wasm",
+  "name": "@ar-js-org/artoolkit5-wasm",
   "version": "0.1.0",
   "private": true,
   "type": "module",
