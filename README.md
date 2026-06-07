@@ -63,7 +63,7 @@ Pass video frame data to the WebAssembly module and detect markers inside your f
 // Initialize camera tracker dimensions
 core.setup(width, height, cameraID);
 
-function processFrame(videoElement, videoLumaData) {
+function processFrame(videoElementData, videoLumaData) {
   // Pass video frames as Uint8Array/typed arrays
   core.passVideoData(videoElementData, videoLumaData, true);
 
