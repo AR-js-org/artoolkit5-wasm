@@ -31,7 +31,7 @@ async function T(t, r, o, n = "/data/patt.hiro") {
 }
 const A = 2, l = 5, f = 2, L = 0, O = 1, u = 0, d = 1, w = 2, F = 3, N = 4;
 async function m(t = {}) {
-  t.quiet || console.log("artoolkit5-wasm v0.1.0");
+  t.quiet || console.log("artoolkit5-wasm v0.1.1");
   const r = await _({
     locateFile: t.locateFile,
     wasmBinary: t.wasmBinary
