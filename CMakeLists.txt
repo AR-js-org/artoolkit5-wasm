@@ -118,7 +118,7 @@ target_link_options(artoolkit5 PRIVATE
         "SHELL:-s SINGLE_FILE=0"
         "SHELL:-s ENVIRONMENT=web"
 
-        "SHELL:-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF32','FS']"
+        "SHELL:-s EXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF32','HEAPF64','FS']"
 
         "SHELL:--bind"
 )
