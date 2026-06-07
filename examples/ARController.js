@@ -63,17 +63,9 @@ export default class ARController {
 
         // Copy transform matrix from WASM heap
         const ptr = this.core.getTransform();
-        // Float64Array requires 8-byte alignment. If ptr is not aligned, fallback to DataView.
-        if (ptr % 8 === 0) {
-          const heapMatrix = new Float64Array(this.mod.HEAPU8.buffer, ptr, 12);
-          tracked.matrix.set(heapMatrix);
-        } else {
-
-          const view = new DataView(this.mod.HEAPU8.buffer, ptr, 96); // 12 * 8 bytes = 96
-          for (let i = 0; i < 12; i++) {
-            tracked.matrix[i] = view.getFloat64(i * 8, true);
-          }
-        }
+        const heapIndex = ptr >> 3;
+        const heapMatrix = this.mod.HEAPF64.subarray(heapIndex, heapIndex + 12);
+        tracked.matrix.set(heapMatrix);
 
         // Convert to 4x4 GL matrix
         this.transMatToGLMat(tracked.matrix, tracked.matrixGL);
