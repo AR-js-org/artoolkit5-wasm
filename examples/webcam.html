@@ -44,6 +44,7 @@
     <script type="module">
         import createModule from "./../dist/artoolkit5.js";
         import { loadCameraFromUrl, addMarkerFromUrl } from "./../dist/index.js";
+        import ARController from "./ARController.js";
 
         const cameraParam = '../data/camera_para.dat';   // adjust path
         const markerPatt = '../data/patt.hiro';         // adjust path
@@ -107,6 +108,9 @@
                 const patt_id = await addMarkerFromUrl(mod, core, "./data/patt.hiro");
                 console.log("patt_id:", patt_id);
 
+                const controller = new ARController(mod, core, width, height);
+                controller.trackMarker(patt_id, 1.0);
+
                 const process = function () {
                     context_process.fillStyle = "black";
                     context_process.fillRect(0, 0, width, height);
@@ -114,7 +118,12 @@
 
                     const imageData = context_process.getImageData(0, 0, width, height);
                     
-                    core.passVideoData(imageData.data, [], true);
+                    const activeMarkers = controller.process(imageData.data);
+                    for (const marker of activeMarkers) {
+                        console.log(`Detected Marker ID: ${marker.id}`);
+                        console.log(`Pose Matrix (3x4):`, marker.matrix);
+                        console.log(`GL Matrix (4x4):`, marker.matrixGL);
+                    }
                 };
 
                 function tick() {
