@@ -106,7 +106,7 @@ To build the project from source, you need:
 
 First, clone the repository recursively to fetch the nested submodules:
 ```bash
-git clone --recursive https://github.com/kalwalt/artoolkit5-wasm.git
+git clone --recursive https://github.com/ar-js-org/artoolkit5-wasm.git
 cd artoolkit5-wasm
 npm install
 ```
@@ -161,4 +161,4 @@ Then navigate to `http://localhost:5173/examples/webcam.html` in your web browse
 
 ## 📄 License
 
-This library is licensed under the **LGPL-3.0 License**, matching the upstream ARToolKit5 license requirements.
+This library is licensed under the **MIT License**.
