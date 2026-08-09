@@ -1,7 +1,29 @@
 {
   "name": "@ar-js-org/artoolkit5-wasm",
-  "version": "0.1.1",
-  "private": true,
+  "version": "0.1.2",
+  "description": "A high-performance WebAssembly port of WebARKitLib (ARToolKit5) for marker tracking, pose estimation, and marker generation in the browser and Node.js.",
+  "keywords": [
+    "artoolkit",
+    "artoolkit5",
+    "wasm",
+    "webassembly",
+    "webarkitlib",
+    "ar",
+    "augmented-reality",
+    "marker-tracking",
+    "pose-estimation",
+    "ar-js"
+  ],
+  "author": "Walter Perdan",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ar-js-org/artoolkit5-wasm.git"
+  },
+  "homepage": "https://github.com/ar-js-org/artoolkit5-wasm#readme",
+  "bugs": {
+    "url": "https://github.com/ar-js-org/artoolkit5-wasm/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -27,8 +49,9 @@
     "dist/loader.d.ts.map"
   ],
   "scripts": {
+    "clean": "node -e \"const fs=require('fs');['dist/index.js','dist/index.js.map','dist/index.d.ts','dist/index.d.ts.map','dist/loader.d.ts','dist/loader.d.ts.map','dist/src'].forEach(p=>{try{fs.rmSync(p,{recursive:true,force:true})}catch{}})\"",
     "build:wasm": "node scripts/build-wasm-docker.mjs",
-    "build:wrap": "vite build && tsc -p tsconfig.build.json",
+    "build:wrap": "npm run clean && vite build && tsc -p tsconfig.build.json",
     "build": "npm run build:wasm && npm run build:wrap",
     "lint:cpp": "node scripts/clang-format.mjs --lint",
     "format:cpp": "node scripts/clang-format.mjs"
@@ -39,7 +62,7 @@
   "devDependencies": {
     "clang-format": "^1.8.0",
     "glob": "^13.0.6",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "typescript": "^7.0.2",
+    "vite": "8.0.16"
   }
 }
