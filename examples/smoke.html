@@ -48,10 +48,14 @@
   }
 
   console.log(core)
-  console.log("AR_DEBUG_ENABLE:", mod.AR_DEBUG_ENABLE);
-  console.log("LOG_DEBUG:", mod.AR_LOG_LEVEL_DEBUG);
-  console.log("THRESH_MANUAL:", mod.AR_LABELING_THRESH_MODE_MANUAL);
+  console.log("AR_DEBUG_ENABLE:", artk.constants.AR_DEBUG_ENABLE);
+  console.log("LOG_DEBUG:", artk.constants.AR_LOG_LEVEL_DEBUG);
+  console.log("THRESH_MANUAL:", artk.constants.AR_LABELING_THRESH_MODE_MANUAL);
 
+  // Newly reachable: barcode marker configuration was impossible before,
+  // because no AR_MATRIX_CODE_* value was exported.
+  console.log("MATRIX_CODE_3x3:", artk.constants.AR_MATRIX_CODE_3x3);
+  console.log("COLOR_AND_MATRIX:", artk.constants.AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX);
 
   console.log("AR_DEBUG_DISABLE from artk: ", artk.constants.AR_DEBUG_DISABLE);
   

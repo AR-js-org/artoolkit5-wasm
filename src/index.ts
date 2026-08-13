@@ -2,18 +2,16 @@
 declare const __VERSION__: string;
 import createEmscriptenModule from "../dist/artoolkit5.js";
 import { loadCameraFromUrl, addMarkerFromUrl } from './loader.js';
-import {
-    AR_DEBUG_DISABLE,
-    AR_DEBUG_ENABLE,
-    AR_LOG_LEVEL_DEBUG,
-    AR_LOG_LEVEL_INFO,
-    AR_LOG_LEVEL_WARN,
-    AR_LOG_LEVEL_ERROR,
-    AR_LOG_LEVEL_REL_INFO,
-    AR_PIXEL_FORMAT_RGBA,
-    AR_MATRIX_CODE_DETECTION,
-    AR_PIXEL_FORMAT_MONO
-} from '@ar-js-org/artoolkit5-constants';
+import * as artoolkitConstants from '@ar-js-org/artoolkit5-constants';
+
+/**
+ * Every ARToolKit5 constant, re-exported so consumers do not need to take a
+ * second dependency on @ar-js-org/artoolkit5-constants just to call a setter.
+ *
+ * These are the single source of truth for constant values: they are generated
+ * from the same WebARKitLib headers this WebAssembly module is compiled against.
+ */
+export * from '@ar-js-org/artoolkit5-constants';
 
 export type LocateFile = (path: string, prefix: string) => string;
 
@@ -22,6 +20,14 @@ export interface CreateARToolKitOptions {
     wasmBinary?: ArrayBuffer | Uint8Array; // per Node in futuro
     quiet?: boolean;
 }
+
+/**
+ * Marker kind sentinels. These are this wrapper's own values, not ARToolKit5
+ * constants, so they are declared here rather than generated upstream.
+ */
+export const UNKNOWN_MARKER = -1;
+export const PATTERN_MARKER = 0;
+export const BARCODE_MARKER = 1;
 
 export async function createARToolKit(opts: CreateARToolKitOptions = {}) {
     if (!opts.quiet) {
@@ -36,29 +42,13 @@ export async function createARToolKit(opts: CreateARToolKitOptions = {}) {
 
     const core = new mod.ARToolKitCore();
 
-    const UNKNOWN_MARKER = -1;
-    const PATTERN_MARKER = 0;
-    const BARCODE_MARKER = 1;
-
     // “freeze” per evitare mutazioni accidentali.
     const constants = Object.freeze({
-        AR_DEBUG_DISABLE: AR_DEBUG_DISABLE,
-        AR_DEBUG_ENABLE: AR_DEBUG_ENABLE,
-
-        AR_LOG_LEVEL_DEBUG: AR_LOG_LEVEL_DEBUG,
-        AR_LOG_LEVEL_INFO: AR_LOG_LEVEL_INFO,
-        AR_LOG_LEVEL_WARN: AR_LOG_LEVEL_WARN,
-        AR_LOG_LEVEL_ERROR: AR_LOG_LEVEL_ERROR,
-        AR_LOG_LEVEL_REL_INFO: AR_LOG_LEVEL_REL_INFO,
-
-        AR_PIXEL_FORMAT_RGBA: AR_PIXEL_FORMAT_RGBA,
-        AR_PIXEL_FORMAT_MONO: AR_PIXEL_FORMAT_MONO,
-        AR_MATRIX_CODE_DETECTION: AR_MATRIX_CODE_DETECTION,
-
+        ...artoolkitConstants,
         UNKNOWN_MARKER,
         PATTERN_MARKER,
         BARCODE_MARKER,
-    } as const);
+    });
 
     return { mod, core, constants };
 }
