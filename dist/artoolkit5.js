@@ -5582,121 +5582,121 @@ function checkIncomingModuleAPI() {
 }
 
 var ASM_CONSTS = {
-  30276: ($0, $1, $2) => {
+  29428: ($0, $1, $2) => {
     var message = UTF8ToString($0);
     var infoHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     console.log(infoHead + message, style);
   },
-  30415: ($0, $1, $2, $3) => {
+  29567: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var infoHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     var format = UTF8ToString($3);
     console.log(infoHead + message, style, format);
   },
-  30593: ($0, $1, $2, $3) => {
+  29745: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var infoHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     var format = UTF8ToString($3);
     console.log(infoHead + message, style, format);
   },
-  30771: ($0, $1, $2, $3) => {
+  29923: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var infoHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     var format = UTF8ToString($3);
     console.log(infoHead + message, style, format);
   },
-  30949: ($0, $1, $2, $3) => {
+  30101: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var infoHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     var format = UTF8ToString($3);
     console.log(infoHead + message, style, format);
   },
-  31127: ($0, $1, $2, $3) => {
+  30279: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var infoHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     console.log(infoHead + message, style, $3);
   },
-  31270: ($0, $1, $2) => {
+  30422: ($0, $1, $2) => {
     var message = UTF8ToString($0);
     var errorHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     console.error(errorHead + message, style);
   },
-  31413: ($0, $1, $2, $3) => {
+  30565: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var errorHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     var format = UTF8ToString($3);
     console.error(errorHead + message, style, format);
   },
-  31595: ($0, $1, $2, $3) => {
+  30747: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var errorHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     var format = UTF8ToString($3);
     console.error(errorHead + message, style, format);
   },
-  31777: ($0, $1, $2, $3) => {
+  30929: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var errorHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     var format = UTF8ToString($3);
     console.error(errorHead + message, style, format);
   },
-  31959: ($0, $1, $2, $3) => {
+  31111: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var errorHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     var format = UTF8ToString($3);
     console.error(errorHead + message, style, format);
   },
-  32141: ($0, $1, $2, $3) => {
+  31293: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var errorHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     console.error(errorHead + message, style, $3);
   },
-  32288: ($0, $1, $2) => {
+  31440: ($0, $1, $2) => {
     var message = UTF8ToString($0);
     var infoHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     console.warn(infoHead + message, style);
   },
-  32428: ($0, $1, $2, $3) => {
+  31580: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var errorHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     var format = UTF8ToString($3);
     console.warn(errorHead + message, style, format);
   },
-  32609: ($0, $1, $2, $3) => {
+  31761: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var errorHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     var format = UTF8ToString($3);
     console.warn(errorHead + message, style, format);
   },
-  32790: ($0, $1, $2, $3) => {
+  31942: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var errorHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     var format = UTF8ToString($3);
     console.warn(errorHead + message, style, format);
   },
-  32971: ($0, $1, $2, $3) => {
+  32123: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var errorHead = UTF8ToString($1);
     var style = UTF8ToString($2);
     var format = UTF8ToString($3);
     console.warn(errorHead + message, style, format);
   },
-  33152: ($0, $1, $2, $3) => {
+  32304: ($0, $1, $2, $3) => {
     var message = UTF8ToString($0);
     var errorHead = UTF8ToString($1);
     var style = UTF8ToString($2);
