@@ -37,3 +37,24 @@ jobs:
 
       - name: Build JS/TS Wrapper
         run: npm run build:wrap
+
+      # Guards against a stale committed binary. Without this, a change to the
+      # C++ bindings could merge while dist/ still holds the previously built
+      # WebAssembly: CI only proves the source compiles, never that the
+      # committed artifacts actually match it.
+      #
+      # Scoped to the Emscripten outputs on purpose. Two clean builds of those
+      # are byte-identical, so comparing them is safe. The wrapper outputs are
+      # not comparable: dist/index.js.map embeds sourcesContent using the
+      # working tree's line endings, so it differs between a CRLF checkout and
+      # this LF runner. package-lock.json is excluded because the install step
+      # above regenerates it.
+      - name: Check committed WebAssembly is up to date
+        run: |
+          if [[ -n $(git status --porcelain -- dist/artoolkit5.wasm dist/artoolkit5.js) ]]; then
+            echo "::error::dist/artoolkit5.wasm or dist/artoolkit5.js is out of sync with the C++ sources."
+            echo "Run 'npm run build:wasm' locally and commit the result."
+            git status --porcelain -- dist/artoolkit5.wasm dist/artoolkit5.js
+            exit 1
+          fi
+          echo "Committed WebAssembly matches a clean build."
