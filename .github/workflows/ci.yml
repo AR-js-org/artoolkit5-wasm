@@ -30,9 +30,15 @@ jobs:
       - name: Run C++ Linter
         run: npm run lint:cpp
 
+      # DEBUG=1 matches the configuration the committed dist/ was built with
+      # (-g2, ASSERTIONS=1, --profiling, unminified). It is set explicitly so
+      # CI reproduces the shipped artifact rather than a Release build, which
+      # would otherwise make the sync check below fail on every run.
+      # Switching the shipped artifact to Release is a separate decision.
       - name: Compile WebAssembly
         env:
           CI: true
+          DEBUG: 1
         run: npm run build:wasm
 
       - name: Build JS/TS Wrapper
@@ -44,11 +50,11 @@ jobs:
       # committed artifacts actually match it.
       #
       # Scoped to the Emscripten outputs on purpose. Two clean builds of those
-      # are byte-identical, so comparing them is safe. The wrapper outputs are
-      # not comparable: dist/index.js.map embeds sourcesContent using the
-      # working tree's line endings, so it differs between a CRLF checkout and
-      # this LF runner. package-lock.json is excluded because the install step
-      # above regenerates it.
+      # are byte-identical (verified for both Release and DEBUG configs), so
+      # comparing them is safe. The wrapper outputs are not comparable:
+      # dist/index.js.map embeds sourcesContent using the working tree's line
+      # endings, so it differs between a CRLF checkout and this LF runner.
+      # package-lock.json is excluded because the install step regenerates it.
       - name: Check committed WebAssembly is up to date
         run: |
           if [[ -n $(git status --porcelain -- dist/artoolkit5.wasm dist/artoolkit5.js) ]]; then
