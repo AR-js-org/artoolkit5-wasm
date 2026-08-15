@@ -98,7 +98,7 @@ var s = 0, c = 1, l = 2, u = 3, d = 5, ee = 13, f = 12, p = 0, m = 1, h = 2, g =
 	AR_TEMPLATE_MATCHING_MONO_AND_MATRIX: () => 4
 }), le = -1, ue = 0, de = 1;
 async function fe(t = {}) {
-	t.quiet || console.log("artoolkit5-wasm v0.1.2");
+	t.quiet || console.log("artoolkit5-wasm v0.1.3");
 	let n = await e({
 		locateFile: t.locateFile,
 		wasmBinary: t.wasmBinary
