@@ -105,7 +105,7 @@ var s = 0, c = 1, l = 2, u = 3, d = 5, ee = 13, f = 12, p = 0, m = 1, h = 2, g =
 	AR_USE_TRACKING_HISTORY_V2: () => 2
 }), ge = -1, _e = 0, ve = 1;
 async function ye(t = {}) {
-	t.quiet || console.log("artoolkit5-wasm v0.1.3");
+	t.quiet || console.log("artoolkit5-wasm v0.2.0");
 	let n = await e({
 		locateFile: t.locateFile,
 		wasmBinary: t.wasmBinary
