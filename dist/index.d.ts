@@ -52,10 +52,17 @@ export declare function createARToolKit(opts?: CreateARToolKitOptions): Promise<
         AR_DEBUG_DISABLE: number;
         AR_DEBUG_ENABLE: number;
         AR_DEFAULT_DEBUG_MODE: number;
+        AR_LABELING_WHITE_REGION: number;
+        AR_LABELING_BLACK_REGION: number;
+        AR_DEFAULT_LABELING_MODE: number;
         AR_DEFAULT_LABELING_THRESH: number;
         AR_IMAGE_PROC_FRAME_IMAGE: number;
         AR_IMAGE_PROC_FIELD_IMAGE: number;
         AR_DEFAULT_IMAGE_PROC_MODE: number;
+        AR_USE_TRACKING_HISTORY: number;
+        AR_NOUSE_TRACKING_HISTORY: number;
+        AR_USE_TRACKING_HISTORY_V2: number;
+        AR_DEFAULT_MARKER_EXTRACTION_MODE: number;
         AR_MAX_LOOP_COUNT: number;
         AR_LOOP_BREAK_THRESH: number;
         AR_LOG_LEVEL_DEBUG: number;
