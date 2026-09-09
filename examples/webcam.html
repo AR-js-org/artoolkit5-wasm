@@ -33,6 +33,22 @@
             padding: 6px 10px;
             border-radius: 4px;
         }
+
+        #controls {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 6px 10px;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        #controls a {
+            color: #8cf;
+        }
     </style>
 </head>
 
@@ -40,14 +56,39 @@
     <video id="view" autoplay playsinline muted></video>
     <canvas id="overlay"></canvas>
     <div id="log">Starting…</div>
+    <div id="controls">
+        <label>detection mode
+            <select id="mode"></select>
+        </label>
+        <a href="./data/marker_05_3x3.jpg" target="_blank">barcode marker (ID 5)</a>
+    </div>
 
     <script type="module">
         import createModule from "./../dist/artoolkit5.js";
-        import { loadCameraFromUrl, addMarkerFromUrl } from "./../dist/index.js";
+        import {
+            loadCameraFromUrl,
+            addMarkerFromUrl,
+            AR_TEMPLATE_MATCHING_COLOR,
+            AR_TEMPLATE_MATCHING_MONO,
+            AR_MATRIX_CODE_DETECTION,
+            AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX,
+            AR_TEMPLATE_MATCHING_MONO_AND_MATRIX,
+            AR_MATRIX_CODE_3x3
+        } from "./../dist/index.js";
         import ARController from "./ARController.js";
 
-        const cameraParam = '../data/camera_para.dat';   // adjust path
-        const markerPatt = '../data/patt.hiro';         // adjust path
+        // Show both markers at once to exercise the combined modes: the Hiro pattern
+        // (data/patt.hiro) and the 3x3 barcode encoding ID 5 (data/marker_05_3x3.jpg).
+        // Only the combined modes detect both families in a single frame.
+        const DETECTION_MODES = [
+            ['color', AR_TEMPLATE_MATCHING_COLOR],
+            ['mono', AR_TEMPLATE_MATCHING_MONO],
+            ['matrix', AR_MATRIX_CODE_DETECTION],
+            ['color+matrix', AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX],
+            ['mono+matrix', AR_TEMPLATE_MATCHING_MONO_AND_MATRIX]
+        ];
+
+        const BARCODE_ID = 5;
 
         const video = document.getElementById('view');
         const canvas = document.getElementById('overlay');
@@ -110,6 +151,26 @@
 
                 const controller = new ARController(mod, core, width, height);
                 controller.trackMarker(patt_id, 1.0);
+                controller.trackBarcodeMarker(BARCODE_ID, 1.0);
+
+                // Both families stay registered in every mode. Under a single mode the other
+                // family simply never matches, so no special-casing is needed here.
+                const applyDetectionMode = (mode) => {
+                    core.setPatternDetectionMode(mode);
+                    core.setMatrixCodeType(AR_MATRIX_CODE_3x3);
+                };
+
+                const modeSelect = document.getElementById('mode');
+                for (const [label, value] of DETECTION_MODES) {
+                    const option = document.createElement('option');
+                    option.value = String(value);
+                    option.textContent = label;
+                    modeSelect.appendChild(option);
+                }
+                // Defaults to a combined mode so both markers are detected out of the box.
+                modeSelect.value = String(AR_TEMPLATE_MATCHING_MONO_AND_MATRIX);
+                modeSelect.onchange = () => applyDetectionMode(Number(modeSelect.value));
+                applyDetectionMode(AR_TEMPLATE_MATCHING_MONO_AND_MATRIX);
 
                 // Track detection state to avoid spamming the console on every frame.
                 // We log the detailed matrices only on first detection and when lost.
@@ -125,13 +186,13 @@
                     const activeMarkers = controller.process(imageData.data);
                     if (activeMarkers.length > 0) {
                         // The UI DOM element is updated on every frame to show real-time detection status
-                        log("Detected Marker IDs: " + activeMarkers.map(m => m.id).join(", "));
-                        
+                        log("Detected: " + activeMarkers.map(m => `${m.type} id ${m.id}`).join(", "));
+
                         // Console logs for matrices are output only on the first detection transition
                         // to avoid console spam and maintain browser rendering performance.
                         if (!wasDetected) {
                             for (const marker of activeMarkers) {
-                                console.log(`Detected Marker ID: ${marker.id}`);
+                                console.log(`Detected ${marker.type} marker ID: ${marker.id}`);
                                 console.log(`Pose Matrix (3x4):`, marker.matrix);
                                 console.log(`GL Matrix (4x4):`, marker.matrixGL);
                             }
