@@ -461,10 +461,36 @@ namespace arjs
             }
             ARMarkerInfo* markerInfo = markerIndex < 0 ? &gMarkerInfo : &((this->arhandle)->markerInfo[markerIndex]);
 
+            // ARMarkerInfo's three result families are each only written by the modes that
+            // use them (see ar.h and the branches in arPattGetID.c). A field the active mode
+            // did not populate holds stale or uninitialised memory, so report -1 rather than
+            // letting it reach JavaScript. These predicates mirror those branches exactly.
+            const int mode = this->arhandle->arPatternDetectionMode;
+
+            const bool includesPattern = mode == AR_TEMPLATE_MATCHING_COLOR ||
+                                         mode == AR_TEMPLATE_MATCHING_MONO ||
+                                         mode == AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX ||
+                                         mode == AR_TEMPLATE_MATCHING_MONO_AND_MATRIX;
+
+            const bool includesMatrix = mode == AR_MATRIX_CODE_DETECTION ||
+                                        mode == AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX ||
+                                        mode == AR_TEMPLATE_MATCHING_MONO_AND_MATRIX;
+
+            const bool isCombined = includesPattern && includesMatrix;
+
             emscripten::val info = emscripten::val::object();
-            info.set("id", markerInfo->id);
-            info.set("dir", markerInfo->dir);
-            info.set("cf", markerInfo->cf);
+            info.set("id", isCombined ? -1 : markerInfo->id);
+            info.set("dir", isCombined ? -1 : markerInfo->dir);
+            info.set("cf", isCombined ? -1.0 : markerInfo->cf);
+
+            info.set("idPatt", includesPattern ? markerInfo->idPatt : -1);
+            info.set("dirPatt", includesPattern ? markerInfo->dirPatt : -1);
+            info.set("cfPatt", includesPattern ? markerInfo->cfPatt : -1.0);
+
+            info.set("idMatrix", includesMatrix ? markerInfo->idMatrix : -1);
+            info.set("dirMatrix", includesMatrix ? markerInfo->dirMatrix : -1);
+            info.set("cfMatrix", includesMatrix ? markerInfo->cfMatrix : -1.0);
+
             info.set("area", markerInfo->area);
             info.set("errorCorrected", markerInfo->errorCorrected);
 

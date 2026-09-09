@@ -5,7 +5,11 @@ export default class ARController {
     this.width = width;
     this.height = height;
 
-    this.patternMarkers = {}; // maps pattId -> marker state
+    // Pattern and barcode IDs live in separate namespaces: each family is looked up via
+    // the getMarkerInfo field that produced it, so a pattern with ID 5 and a barcode with
+    // ID 5 are different markers and may both be registered.
+    this.patternMarkers = {}; // maps idPatt   -> marker state
+    this.barcodeMarkers = {}; // maps idMatrix -> marker state
     this.defaultMarkerWidth = 1.0;
   }
 
@@ -13,8 +17,24 @@ export default class ARController {
    * Register a pattern marker ID and its physical width.
    */
   trackMarker(pattId, markerWidth) {
-    this.patternMarkers[pattId] = {
-      id: pattId,
+    this.patternMarkers[pattId] = this.createMarkerState(pattId, 'pattern', markerWidth);
+  }
+
+  /**
+   * Register a barcode (matrix code) marker ID and its physical width.
+   *
+   * Unlike a pattern marker there is nothing to load: the ID is encoded in the marker's
+   * geometry. Detection additionally requires a matrix-capable detection mode, set via
+   * setPatternDetectionMode with AR_MATRIX_CODE_DETECTION or either combined mode.
+   */
+  trackBarcodeMarker(barcodeId, markerWidth) {
+    this.barcodeMarkers[barcodeId] = this.createMarkerState(barcodeId, 'barcode', markerWidth);
+  }
+
+  createMarkerState(id, type, markerWidth) {
+    return {
+      id,
+      type,
       markerWidth: markerWidth || this.defaultMarkerWidth,
       inPrevious: false,
       inCurrent: false,
@@ -25,7 +45,7 @@ export default class ARController {
 
   /**
    * Process a new video frame, runs marker detection, and updates tracked matrices.
-   * Returns an array of detected pattern markers in the current frame.
+   * Returns an array of markers detected in the current frame, of either family.
    */
   process(videoFrame) {
     // Pass video frame directly if supplied
@@ -38,7 +58,8 @@ export default class ARController {
     const markerNum = this.core.getMarkerNum();
 
     // Reset current frame states, shift current to previous
-    for (const marker of Object.values(this.patternMarkers)) {
+    const allMarkers = [...Object.values(this.patternMarkers), ...Object.values(this.barcodeMarkers)];
+    for (const marker of allMarkers) {
       marker.inPrevious = marker.inCurrent;
       marker.inCurrent = false;
     }
@@ -49,32 +70,48 @@ export default class ARController {
     for (let i = 0; i < markerNum; i++) {
       const markerInfo = this.core.getMarkerInfo(i);
 
-      // Check if it's a registered pattern marker
-      if (markerInfo.id > -1 && this.patternMarkers[markerInfo.id]) {
-        const tracked = this.patternMarkers[markerInfo.id];
-        tracked.inCurrent = true;
+      // Read each family through its own field rather than through markerInfo.id, which
+      // the engine only populates when the mode is pattern-only or matrix-only. In a
+      // combined mode both checks can match in the same frame; in a single mode the
+      // inactive family reports -1.
+      if (markerInfo.idPatt > -1 && this.patternMarkers[markerInfo.idPatt]) {
+        const tracked = this.patternMarkers[markerInfo.idPatt];
+        this.updatePose(i, tracked);
+        detected.push(tracked);
+      }
 
-        // Calculate transform matrix (continuous tracking if visible previously)
-        if (tracked.inPrevious) {
-          this.core.getTransMatSquareCont(i, tracked.markerWidth);
-        } else {
-          this.core.getTransMatSquare(i, tracked.markerWidth);
-        }
-
-        // Copy transform matrix from WASM heap
-        const ptr = this.core.getTransform();
-        const heapIndex = ptr >> 3;
-        const heapMatrix = this.mod.HEAPF64.subarray(heapIndex, heapIndex + 12);
-        tracked.matrix.set(heapMatrix);
-
-        // Convert to 4x4 GL matrix
-        this.transMatToGLMat(tracked.matrix, tracked.matrixGL);
-
+      if (markerInfo.idMatrix > -1 && this.barcodeMarkers[markerInfo.idMatrix]) {
+        const tracked = this.barcodeMarkers[markerInfo.idMatrix];
+        this.updatePose(i, tracked);
         detected.push(tracked);
       }
     }
 
     return detected;
+  }
+
+  /**
+   * Computes the pose for one detected square and writes it into the tracked marker's
+   * reusable buffers.
+   */
+  updatePose(candidateIndex, tracked) {
+    tracked.inCurrent = true;
+
+    // Calculate transform matrix (continuous tracking if visible previously)
+    if (tracked.inPrevious) {
+      this.core.getTransMatSquareCont(candidateIndex, tracked.markerWidth);
+    } else {
+      this.core.getTransMatSquare(candidateIndex, tracked.markerWidth);
+    }
+
+    // Copy transform matrix from WASM heap
+    const ptr = this.core.getTransform();
+    const heapIndex = ptr >> 3;
+    const heapMatrix = this.mod.HEAPF64.subarray(heapIndex, heapIndex + 12);
+    tracked.matrix.set(heapMatrix);
+
+    // Convert to 4x4 GL matrix
+    this.transMatToGLMat(tracked.matrix, tracked.matrixGL);
   }
 
   /**
