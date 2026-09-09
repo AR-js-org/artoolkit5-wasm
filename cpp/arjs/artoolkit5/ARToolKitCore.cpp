@@ -467,8 +467,7 @@ namespace arjs
             // letting it reach JavaScript. These predicates mirror those branches exactly.
             const int mode = this->arhandle->arPatternDetectionMode;
 
-            const bool includesPattern = mode == AR_TEMPLATE_MATCHING_COLOR ||
-                                         mode == AR_TEMPLATE_MATCHING_MONO ||
+            const bool includesPattern = mode == AR_TEMPLATE_MATCHING_COLOR || mode == AR_TEMPLATE_MATCHING_MONO ||
                                          mode == AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX ||
                                          mode == AR_TEMPLATE_MATCHING_MONO_AND_MATRIX;
 
