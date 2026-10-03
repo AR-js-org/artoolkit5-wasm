@@ -95,10 +95,12 @@ shipping.
 
 ## After applying
 
-- **TypeScript:** `tsc` runs without `removeComments`, so the header of
-  `src/index.ts` and `src/loader.ts` is copied into `dist/index.d.ts` and
-  `dist/loader.d.ts`. `dist/` is committed, so run `npm run build:wrap` and commit
-  what it produces.
+- **TypeScript:** the header does **not** reach `dist/index.js`, `dist/index.d.ts`
+  or `dist/loader.d.ts` (Vite and `tsc` both drop a detached top-of-file comment;
+  verified by grep). It does change the source maps, which embed the source and
+  its line positions: `dist/index.js.map`, `dist/index.d.ts.map` and
+  `dist/loader.d.ts.map`. `dist/` is committed, so run `npm run build:wrap` and
+  commit those maps. Do not assume the header ships to consumers.
 - **C++:** a header changes no behaviour, but it moves every line of the file, and
   the committed wasm is a `-g2` build whose DWARF records those line numbers. Do
   **not** run `npm run build:wasm` just for this: the wasm is not byte-reproducible
