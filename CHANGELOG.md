@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `repository`, `homepage` and `bugs` in `package.json` now use the real `AR-js-org`
   casing (with `git+` on the repository URL), and `publishConfig` sets `access: public`
   and `provenance: true`. Provenance attestation requires the repository URL to match.
+- `npm run build:wasm` no longer fails outside an interactive terminal: it passes `-it` to
+  Docker only when stdin and stdout are terminals and `CI` is unset, and sets
+  `MSYS_NO_PATHCONV=1` so Git Bash on Windows does not rewrite the container path.
+  `npm run lint:cpp` uses the `clang-format` installed in `node_modules/.bin` before
+  looking on `PATH`, so it runs after `npm install` with nothing else installed.
+  ([#27](https://github.com/AR-js-org/artoolkit5-wasm/issues/27))
 - CI installs with `npm ci` (it deleted the lockfile before), runs `npm test`, and now also runs
   on pull requests stacked on another branch (it was limited to PRs into `main` and `dev`).
 - Depends on `@ar-js-org/artoolkit5-constants` `^0.4.0` (was `^0.3.0`) and the lockfile
