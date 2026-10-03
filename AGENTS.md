@@ -174,29 +174,10 @@ the same text as `artoolkit5-ts`'s. Adding a header to a file never requires edi
 
 ## Releasing
 
-Run the **Release** workflow (Actions → Release → Run workflow) from `main` with
-`version` = `X.Y.Z` (no `v`). It tags the commit (`vX.Y.Z`), publishes to npm with
-provenance via OIDC Trusted Publishing (no `NPM_TOKEN`) and creates the GitHub
-Release. It pushes no commit.
-
-1. **Release PR** (`dev` → `main`, merge commit), `chore(release): X.Y.Z`: version in
-   `package.json` and `package-lock.json` (`npm version X.Y.Z --no-git-tag-version`),
-   `CHANGELOG.md` with `[Unreleased]` promoted to `## [X.Y.Z] - YYYY-MM-DD`, and
-   `dist/` rebuilt with `npm run build:wrap`. Do not change `dist/artoolkit5.*`
-   unless the C++ changed in the same release.
-2. Merge it, then dispatch once with `dry_run` set (all checks, nothing published;
-   `node scripts/release-check.mjs X.Y.Z` runs the file checks).
-3. Dispatch again with `dry_run` off. If a run dies after `npm publish`, re-run it
-   with the same version: it skips publishing and creates the Release.
-
-It refuses unless: it runs from `main`; the version is plain stable semver and named by
-`package.json`, the lockfile, `CHANGELOG.md` and `dist/index.js`; no tag names another
-commit; npm lacks it; and rebuilding the wrapper reproduces the committed `dist/`
-wrapper files (the wasm is not compared: not reproducible, #20).
-
-The trusted publisher must be set on npmjs.com for this repository and `release.yml`;
-npm does not validate it when saved. `repository.url` in `package.json` must match the
-repository exactly (`AR-js-org`, with `git+`) or provenance is rejected. Never add
-`registry-url` to `actions/setup-node` there: it blocks the OIDC exchange.
-`.gitattributes` keeps `src/` and `dist/` LF (the maps embed `src/`). Emergency manual
-publish, without provenance: `npm ci && npm run build:wrap && npm publish`.
+The procedure is in [`MAINTAINERS.md`](MAINTAINERS.md). What matters when you are not the
+one releasing: a release is a manually dispatched workflow from `main`, tags are
+`v`-prefixed, the release commit must not change `dist/artoolkit5.*` unless the C++
+changed, and `package.json`'s `repository.url` must keep the exact `AR-js-org` casing or
+provenance fails. Do not add `registry-url` to `actions/setup-node` in the workflow: it
+blocks the OIDC exchange. `.gitattributes` keeps `src/` and `dist/` LF (the source maps
+embed `src/`); an older Windows clone may need the one-time fix in `MAINTAINERS.md`.

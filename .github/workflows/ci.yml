@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     branches: [ main, dev ]
+  # No branch filter: PRs are sometimes stacked on another feature branch, and a
+  # filter on the base branch would leave those with no CI at all.
   pull_request:
-    branches: [ main, dev ]
 
 jobs:
   build:

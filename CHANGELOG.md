@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   version, and rebuilding the wrapper reproduces the committed `dist/` wrapper files. It
   then tags the commit (`vX.Y.Z`), publishes to npm with provenance through OIDC Trusted
   Publishing (no `NPM_TOKEN`) and creates the GitHub Release. Pushes no commit. The
-  procedure is in `AGENTS.md`. `scripts/release-check.mjs` holds the file checks and has tests.
+  procedure, failure recovery and emergency publish are in `MAINTAINERS.md`. `scripts/release-check.mjs` holds the file checks and has tests.
 - `.nvmrc` (Node 24) and `.gitattributes` keeping `src/` and `dist/` LF. The committed
   source maps used to embed CRLF copies of `src/` when built on Windows, which a Linux
   rebuild cannot reproduce.
@@ -33,7 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `repository`, `homepage` and `bugs` in `package.json` now use the real `AR-js-org`
   casing (with `git+` on the repository URL), and `publishConfig` sets `access: public`
   and `provenance: true`. Provenance attestation requires the repository URL to match.
-- CI installs with `npm ci` (it deleted the lockfile before) and runs `npm test`.
+- CI installs with `npm ci` (it deleted the lockfile before), runs `npm test`, and now also runs
+  on pull requests stacked on another branch (it was limited to PRs into `main` and `dev`).
 - Depends on `@ar-js-org/artoolkit5-constants` `^0.4.0` (was `^0.3.0`) and the lockfile
   now resolves 0.4.0, which declares the MIT licence. The previous lock pinned 0.3.0,
   whose published metadata wrongly declared GPL-3.0; the licence terms never changed.

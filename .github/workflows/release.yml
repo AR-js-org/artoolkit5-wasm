@@ -110,7 +110,7 @@ jobs:
             TAG_SHA="$(git rev-parse "refs/tags/$TAG^{commit}")"
             HEAD_SHA="$(git rev-parse HEAD)"
             if [ "$TAG_SHA" != "$HEAD_SHA" ]; then
-              echo "::error::Tag $TAG points to $TAG_SHA, but this run would release $HEAD_SHA. Delete the stale tag, or dispatch from the commit it names."
+              echo "::error::Tag $TAG points to $TAG_SHA, but this run would release $HEAD_SHA. If the tag comes from an earlier run of this same release, use 'Re-run all jobs' on that run instead of dispatching a new one; otherwise delete the stale tag."
               exit 1
             fi
             TAG_EXISTS=true
@@ -266,9 +266,20 @@ jobs:
 
       # Publishes the committed dist/, which `prepare` verified is in sync.
       # Provenance is attested because publishConfig.provenance is true.
+      #
+      # `prepare` already decided whether to publish, but "Re-run failed jobs"
+      # re-runs only this job and reuses that old decision. If the publish had
+      # succeeded and a later step failed, publishing again would fail with E403.
+      # So ask npm again here: the step is safe to repeat.
       - name: Publish to npm
         if: ${{ needs.prepare.outputs.published != 'true' }}
-        run: npm publish
+        run: |
+          NAME="$(node -p "require('./package.json').name")"
+          if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
+            echo "::notice::$NAME@$VERSION is already on npm; skipping the publish."
+          else
+            npm publish
+          fi
 
       - name: Derive release notes
         id: notes
