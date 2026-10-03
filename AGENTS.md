@@ -161,10 +161,15 @@ This repository's own code is MIT. `third_party/WebARKitLib` is LGPLv3 and the
 published `dist/artoolkit5.wasm` is compiled from it, so say so wherever licensing
 is described and never remove that notice.
 
-Source files carry no licence header yet. When they do, the copyright holder is
-**`AR-js-org`** (the organisation, as in `artoolkit5-ts` and `artoolkit5-constants`);
-individual credit goes on an `Author(s):` line. `LICENSE` currently names an
-individual and has not been aligned.
+Every source file in `src/`, `cpp/` and `scripts/` carries a licence header. A new
+file gets one too: follow
+[`.agents/skills/license-header-adder`](.agents/skills/license-header-adder/SKILL.md).
+There are three variants (C++, TypeScript wrapper, build scripts) and which one
+applies depends on whether the file takes part in the LGPLv3 binary. The copyright
+holder is **`AR-js-org`** (the organisation, as in `artoolkit5-ts` and
+`artoolkit5-constants`); individual credit goes on the `Author(s):` line.
+`LICENSE` itself still names an individual and has not been aligned; do not edit it
+as part of adding headers.
 
 ## Releasing
 
