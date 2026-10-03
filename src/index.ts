@@ -62,10 +62,28 @@ export const UNKNOWN_MARKER = -1;
 export const PATTERN_MARKER = 0;
 export const BARCODE_MARKER = 1;
 
+/** The version of this package, injected from package.json at build time. */
+export const ARTOOLKIT5_WASM_VERSION: string = typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'unknown';
+
+/**
+ * Also this package's version. artoolkit5-constants >= 0.4.0 exports its own
+ * `VERSION`, which `export *` above would otherwise re-export under this name,
+ * so a consumer reading `VERSION` would silently get the constants package's
+ * version. A local export takes precedence over `export *`, and the constants
+ * package's version stays available as `ARTOOLKIT_CONSTANTS_VERSION`.
+ */
+export const VERSION: string = ARTOOLKIT5_WASM_VERSION;
+
+// Version strings are not ARToolKit constants, so keep them out of `constants`.
+const {
+    VERSION: _constantsVersion,
+    ARTOOLKIT_CONSTANTS_VERSION: _constantsPackageVersion,
+    ...constantValues
+} = artoolkitConstants;
+
 export async function createARToolKit(opts: CreateARToolKitOptions = {}) {
     if (!opts.quiet) {
-        const version = typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'unknown';
-        console.log(`artoolkit5-wasm v${version}`);
+        console.log(`artoolkit5-wasm v${ARTOOLKIT5_WASM_VERSION}`);
     }
 
     const mod: any = await (createEmscriptenModule as any)({
@@ -77,7 +95,7 @@ export async function createARToolKit(opts: CreateARToolKitOptions = {}) {
 
     // “freeze” per evitare mutazioni accidentali.
     const constants = Object.freeze({
-        ...artoolkitConstants,
+        ...constantValues,
         UNKNOWN_MARKER,
         PATTERN_MARKER,
         BARCODE_MARKER,

@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ARTOOLKIT5_WASM_VERSION` and `VERSION`, exported from the package entry point:
+  the version of this package, injected from `package.json` at build time. The version
+  was already generated at build time rather than hardcoded; it just could not be read
+  programmatically.
+- `ARTOOLKIT_CONSTANTS_VERSION` is now re-exported with the rest of the constants
+  (new in `@ar-js-org/artoolkit5-constants` 0.4.0).
+- `npm test`, covering the package's exports.
+
+### Changed
+
+- Depends on `@ar-js-org/artoolkit5-constants` `^0.4.0` (was `^0.3.0`) and the lockfile
+  now resolves 0.4.0, which declares the MIT licence. The previous lock pinned 0.3.0,
+  whose published metadata wrongly declared GPL-3.0; the licence terms never changed.
+  ([#31](https://github.com/AR-js-org/artoolkit5-wasm/issues/31))
+- `VERSION` is this package's version, **not** the constants package's. The constants
+  package began exporting a `VERSION` of its own in 0.4.0, which `export *` would
+  otherwise have passed through. Its version remains available as
+  `ARTOOLKIT_CONSTANTS_VERSION`. Neither name is added to the `constants` object returned
+  by `createARToolKit()`, since a version string is not an ARToolKit constant.
+  ([#30](https://github.com/AR-js-org/artoolkit5-wasm/issues/30))
+
 ## [0.3.0] - 2026-09-09
 
 ### Added

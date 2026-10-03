@@ -20,6 +20,16 @@ export interface CreateARToolKitOptions {
 export declare const UNKNOWN_MARKER = -1;
 export declare const PATTERN_MARKER = 0;
 export declare const BARCODE_MARKER = 1;
+/** The version of this package, injected from package.json at build time. */
+export declare const ARTOOLKIT5_WASM_VERSION: string;
+/**
+ * Also this package's version. artoolkit5-constants >= 0.4.0 exports its own
+ * `VERSION`, which `export *` above would otherwise re-export under this name,
+ * so a consumer reading `VERSION` would silently get the constants package's
+ * version. A local export takes precedence over `export *`, and the constants
+ * package's version stays available as `ARTOOLKIT_CONSTANTS_VERSION`.
+ */
+export declare const VERSION: string;
 export declare function createARToolKit(opts?: CreateARToolKitOptions): Promise<{
     mod: any;
     core: any;
