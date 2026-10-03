@@ -80,11 +80,10 @@ Node 22 or later. Docker is required for `build:wasm` only.
   C++, you rebuild and commit the artifacts yourself; nothing will tell you if you
   forget. Even a comment-only C++ edit can shift line numbers in the DWARF of a
   `-g2` wasm, so "the wasm is unchanged" is not something to assume.
-- **Git Bash on Windows** rewrites `-w /src` into a Windows path and Docker exits
-  125. Prefix with `MSYS_NO_PATHCONV=1`. The build script also passes `-it`
-  unconditionally unless `CI` is set, so it fails from a non-TTY shell
-  ([#27](https://github.com/AR-js-org/artoolkit5-wasm/issues/27)); `clang-format.mjs`
-  looks only on `PATH`, not in `node_modules/.bin`.
+- **Git Bash on Windows** rewrites `-w /src` into a Windows path and Docker exits 125.
+  `build-wasm-docker.mjs` sets `MSYS_NO_PATHCONV=1` itself; set it yourself if you run
+  `docker run` by hand. The script passes `-it` only when stdin and stdout are terminals
+  and `CI` is unset, and `lint:cpp` uses `node_modules/.bin/clang-format` before `PATH`.
 - **Do not edit `third_party/WebARKitLib`.** It is a pinned submodule of an
   upstream project. Bugs found there get recorded as issues here, not patched.
 

@@ -123,6 +123,7 @@ Compiles the C++ source using Emscripten running inside a Docker container:
 ```bash
 npm run build:wasm
 ```
+The script works from non-interactive shells (CI, scripts) and from Git Bash on Windows. If you run the underlying `docker run` by hand from Git Bash, prefix it with `MSYS_NO_PATHCONV=1`.
 
 #### 2. Build TypeScript Wrapper 📦
 Bundles the JS/TS wrappers using Vite and compiles the declarations:
