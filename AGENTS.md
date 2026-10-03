@@ -26,14 +26,15 @@ src/
   index.ts                    createARToolKit(), re-exports the constants
   loader.ts                   loadCameraFromUrl(), addMarkerFromUrl()
 dist/                         COMMITTED build output, see below
-scripts/                      build-wasm-docker.mjs, clang-format.mjs
+scripts/                      build-wasm-docker.mjs, clang-format.mjs, release-check.mjs
 examples/                     smoke.html, webcam.html, node/smoke.mjs (manual checks)
 docs/                         design notes, e.g. DESIGN-per-mode-marker-fields.md
 ```
 
-There is **no automated test suite**. CI lints, compiles and builds; it does not
-run anything. Verify a change with the examples, and say plainly when you could
-not (the webcam example needs a camera and a printed Hiro marker).
+`npm test` (node:test, `test/`) covers the exports and the release check; CI runs it.
+Nothing tests the wasm: the committed glue is built for `ENVIRONMENT=web` and cannot be
+instantiated in Node. Verify C++ and binding changes with the examples, and say plainly
+when you could not (the webcam example needs a camera and a printed Hiro marker).
 
 ## Setup
 
@@ -173,16 +174,29 @@ the same text as `artoolkit5-ts`'s. Adding a header to a file never requires edi
 
 ## Releasing
 
-There is no automated release workflow yet. Releases so far were made by hand,
-and the published 0.3.0 carries no provenance attestation and has no git tag or
-GitHub Release (earlier versions are tagged `v0.1.1` … `v0.2.0`; tags are
-`v`-prefixed).
+Run the **Release** workflow (Actions → Release → Run workflow) from `main` with
+`version` = `X.Y.Z` (no `v`). It tags the commit (`vX.Y.Z`), publishes to npm with
+provenance via OIDC Trusted Publishing (no `NPM_TOKEN`) and creates the GitHub
+Release. It pushes no commit.
 
-A release commit is `chore(release): X.Y.Z` and contains: the version in
-`package.json` and `package-lock.json`, `CHANGELOG.md` with `[Unreleased]`
-promoted to `## [X.Y.Z] - YYYY-MM-DD`, and `dist/` rebuilt with `npm run build:wrap`.
-It must not change `dist/artoolkit5.js` or `dist/artoolkit5.wasm` unless the C++
-changed in the same release.
+1. **Release PR** (`dev` → `main`, merge commit), `chore(release): X.Y.Z`: version in
+   `package.json` and `package-lock.json` (`npm version X.Y.Z --no-git-tag-version`),
+   `CHANGELOG.md` with `[Unreleased]` promoted to `## [X.Y.Z] - YYYY-MM-DD`, and
+   `dist/` rebuilt with `npm run build:wrap`. Do not change `dist/artoolkit5.*`
+   unless the C++ changed in the same release.
+2. Merge it, then dispatch once with `dry_run` set (all checks, nothing published;
+   `node scripts/release-check.mjs X.Y.Z` runs the file checks).
+3. Dispatch again with `dry_run` off. If a run dies after `npm publish`, re-run it
+   with the same version: it skips publishing and creates the Release.
 
-An OIDC (npm Trusted Publishing) workflow is planned. When it lands, replace this
-section with its procedure, in the style of `artoolkit5-constants`.
+It refuses unless: it runs from `main`; the version is plain stable semver and named by
+`package.json`, the lockfile, `CHANGELOG.md` and `dist/index.js`; no tag names another
+commit; npm lacks it; and rebuilding the wrapper reproduces the committed `dist/`
+wrapper files (the wasm is not compared: not reproducible, #20).
+
+The trusted publisher must be set on npmjs.com for this repository and `release.yml`;
+npm does not validate it when saved. `repository.url` in `package.json` must match the
+repository exactly (`AR-js-org`, with `git+`) or provenance is rejected. Never add
+`registry-url` to `actions/setup-node` there: it blocks the OIDC exchange.
+`.gitattributes` keeps `src/` and `dist/` LF (the maps embed `src/`). Emergency manual
+publish, without provenance: `npm ci && npm run build:wrap && npm publish`.

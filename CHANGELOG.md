@@ -16,9 +16,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ARTOOLKIT_CONSTANTS_VERSION` is now re-exported with the rest of the constants
   (new in `@ar-js-org/artoolkit5-constants` 0.4.0).
 - `npm test`, covering the package's exports.
+- **Release workflow** (`.github/workflows/release.yml`), run manually from `main` with
+  `version` and `dry_run` inputs. It refuses to start unless `package.json`,
+  `package-lock.json`, `CHANGELOG.md` and the built `dist/index.js` name the requested
+  version, the tag is free (or already names the dispatched commit), npm does not have the
+  version, and rebuilding the wrapper reproduces the committed `dist/` wrapper files. It
+  then tags the commit (`vX.Y.Z`), publishes to npm with provenance through OIDC Trusted
+  Publishing (no `NPM_TOKEN`) and creates the GitHub Release. Pushes no commit. The
+  procedure is in `AGENTS.md`. `scripts/release-check.mjs` holds the file checks and has tests.
+- `.nvmrc` (Node 24) and `.gitattributes` keeping `src/` and `dist/` LF. The committed
+  source maps used to embed CRLF copies of `src/` when built on Windows, which a Linux
+  rebuild cannot reproduce.
 
 ### Changed
 
+- `repository`, `homepage` and `bugs` in `package.json` now use the real `AR-js-org`
+  casing (with `git+` on the repository URL), and `publishConfig` sets `access: public`
+  and `provenance: true`. Provenance attestation requires the repository URL to match.
+- CI installs with `npm ci` (it deleted the lockfile before) and runs `npm test`.
 - Depends on `@ar-js-org/artoolkit5-constants` `^0.4.0` (was `^0.3.0`) and the lockfile
   now resolves 0.4.0, which declares the MIT licence. The previous lock pinned 0.3.0,
   whose published metadata wrongly declared GPL-3.0; the licence terms never changed.

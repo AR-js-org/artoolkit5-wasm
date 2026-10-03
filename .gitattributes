@@ -1,0 +1,9 @@
+# dist/ is committed and the Release workflow rebuilds its wrapper on Linux, then
+# fails if the result differs from what is in the repository. Linux produces LF,
+# so these files must be LF in every working tree too. src/ is on the list because
+# the source maps in dist/ embed its contents: a CRLF src/ (Windows core.autocrlf)
+# yields maps that differ from the Linux build for a reason unrelated to the change.
+src/** text eol=lf
+dist/** text eol=lf
+# The wasm is binary; the rule above must not treat it as text.
+dist/*.wasm binary
