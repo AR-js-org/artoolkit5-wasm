@@ -23,9 +23,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: |
-          rm -f package-lock.json
-          npm install
+        run: npm ci
 
       - name: Run C++ Linter
         run: npm run lint:cpp

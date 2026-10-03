@@ -18,11 +18,15 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ar-js-org/artoolkit5-wasm.git"
+    "url": "git+https://github.com/AR-js-org/artoolkit5-wasm.git"
   },
-  "homepage": "https://github.com/ar-js-org/artoolkit5-wasm#readme",
+  "homepage": "https://github.com/AR-js-org/artoolkit5-wasm#readme",
   "bugs": {
-    "url": "https://github.com/ar-js-org/artoolkit5-wasm/issues"
+    "url": "https://github.com/AR-js-org/artoolkit5-wasm/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "type": "module",
   "main": "./dist/index.js",
