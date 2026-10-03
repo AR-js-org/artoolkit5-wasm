@@ -53,11 +53,12 @@
     "build:wasm": "node scripts/build-wasm-docker.mjs",
     "build:wrap": "npm run clean && vite build && tsc -p tsconfig.build.json",
     "build": "npm run build:wasm && npm run build:wrap",
+    "test": "node --test \"test/*.test.mjs\"",
     "lint:cpp": "node scripts/clang-format.mjs --lint",
     "format:cpp": "node scripts/clang-format.mjs"
   },
   "dependencies": {
-    "@ar-js-org/artoolkit5-constants": "^0.3.0"
+    "@ar-js-org/artoolkit5-constants": "^0.4.0"
   },
   "devDependencies": {
     "clang-format": "^1.8.0",
