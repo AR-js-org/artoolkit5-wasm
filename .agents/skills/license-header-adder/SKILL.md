@@ -116,9 +116,9 @@ The copyright holder is **`AR-js-org`** — the organisation, not an individual.
 Individual credit belongs on the `Author(s):` line. This matches
 `artoolkit5-ts` and `artoolkit5-constants`.
 
-Applying headers does **not** change `LICENSE`. At the time of writing `LICENSE`
-in this repository still reads `Copyright (c) 2026 Walter Perdan`, while the
-sibling repositories say `AR-js-org`. Aligning it is the owner's decision.
+`LICENSE` already names `AR-js-org` and carries the LGPLv3 notice for the binary, so
+applying headers never requires editing it. If the holder or year ever changes,
+change `LICENSE`, `resources/HEADER.txt` and every header together.
 
 ## Difference from the sibling repositories
 

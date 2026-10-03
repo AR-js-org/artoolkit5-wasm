@@ -168,8 +168,8 @@ There are three variants (C++, TypeScript wrapper, build scripts) and which one
 applies depends on whether the file takes part in the LGPLv3 binary. The copyright
 holder is **`AR-js-org`** (the organisation, as in `artoolkit5-ts` and
 `artoolkit5-constants`); individual credit goes on the `Author(s):` line.
-`LICENSE` itself still names an individual and has not been aligned; do not edit it
-as part of adding headers.
+`LICENSE` names the same holder and records the LGPLv3 lineage of the binary; it is
+the same text as `artoolkit5-ts`'s. Adding a header to a file never requires editing it.
 
 ## Releasing
 
