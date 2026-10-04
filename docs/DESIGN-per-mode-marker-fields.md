@@ -167,14 +167,7 @@ All six must be present, and absent from `git show HEAD:dist/artoolkit5.wasm`.
 
 **Do not run `build:wrap`.** It regenerates `dist/index.js` from `src/`, which this change does not touch, so it can only add noise. #18 likewise touched only `artoolkit5.js` and `artoolkit5.wasm`.
 
-**Building from a non-TTY shell:** `npm run build:wasm` passes `docker run -it`, which fails when stdin is not a terminal. Under Git Bash on Windows, MSYS additionally rewrites `-w /src` into a Windows path. Both are avoided by invoking Docker directly:
-
-```bash
-MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD:/src" -w /src emscripten/emsdk:4.0.17 \
-  bash -lc "embuilder build zlib libjpeg && emcmake cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j"
-```
-
-Making `-it` conditional on `process.stdout.isTTY` would fix this properly for CI and agents; not done here to keep the change focused.
+**Building from a non-TTY shell:** just run `npm run build:wasm`. The script handles non-interactive execution: it passes `docker run -it` only when stdin and stdout are terminals and `CI` is unset, and it sets `MSYS_NO_PATHCONV=1` itself so Git Bash on Windows does not rewrite `-w /src` into a Windows path ([#27](https://github.com/AR-js-org/artoolkit5-wasm/issues/27)). There is no need to invoke Docker directly. When this change was first built the script did neither, and the artifacts had to be built with a hand-written `docker run`.
 
 **Version when released: 0.3.0**, not 0.2.1. Six new fields is new API surface, and `.id` changes behaviour in combined modes. `artoolkit5-ts` pins `^0.2.0`, so `0.3.0` forces an explicit downstream opt-in instead of a silent pickup — the right direction, since that repo must change its code to read the new fields anyway.
 
