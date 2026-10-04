@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { checkRelease } from "../scripts/release-check.mjs";
+import { checkRelease, entryPoints, missingEntryPoints } from "../scripts/release-check.mjs";
 
 const VERSION = "0.4.0";
 
@@ -16,10 +16,11 @@ async function fixture({
     lockRoot = VERSION,
     changelog = `## [Unreleased]\n\n## [${VERSION}] - 2026-10-03\n\n## [0.3.0] - 2026-09-09\n`,
     dist = `export const ARTOOLKIT5_WASM_VERSION = "${VERSION}";\n`,
+    manifestExtra = {},
 } = {}) {
     const dir = await mkdtemp(join(tmpdir(), "release-check-"));
     await mkdir(join(dir, "dist"));
-    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "x", version: pkg, type: "module" }));
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "x", version: pkg, type: "module", ...manifestExtra }));
     await writeFile(
         join(dir, "package-lock.json"),
         JSON.stringify({ name: "x", version: lockTop, packages: { "": { name: "x", version: lockRoot } } }),
@@ -91,4 +92,45 @@ test("reports a dist that cannot be loaded or exports no version, without throwi
         assert.equal(errors.length, 1, dist);
         assert.match(errors[0], /dist\/index\.js/);
     }
+});
+
+// A declared entry point the tarball does not contain makes `import` fail for every
+// consumer, whatever the build did. 0.1.2 to 0.3.0 all declared `./loader`, pointing
+// at a dist/loader.js that was never built nor published.
+test("entryPoints collects main, types and every exports target, without ./", () => {
+    const manifest = {
+        main: "./dist/index.js",
+        types: "./dist/index.d.ts",
+        exports: {
+            ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
+            "./loader": { types: "./dist/loader.d.ts", import: "./dist/loader.js" },
+            "./package.json": "./package.json",
+            "./features/*": "./dist/features/*.js",
+        },
+    };
+    assert.deepEqual(entryPoints(manifest).sort(), [
+        "dist/index.d.ts",
+        "dist/index.js",
+        "dist/loader.d.ts",
+        "dist/loader.js",
+        "package.json",
+    ]);
+});
+
+test("missingEntryPoints reports declared files absent from the packed list", () => {
+    const manifest = { exports: { ".": "./dist/index.js", "./loader": "./dist/loader.js" } };
+    assert.deepEqual(missingEntryPoints(manifest, ["dist/index.js", "package.json"]), ["dist/loader.js"]);
+    assert.deepEqual(missingEntryPoints(manifest, ["dist/index.js", "dist/loader.js"]), []);
+});
+
+test("rejects a package that declares an export its tarball does not contain", async () => {
+    const dir = await fixture({ manifestExtra: { exports: { ".": "./dist/index.js", "./loader": "./dist/loader.js" } } });
+    const errors = await checkRelease({ dir, version: VERSION });
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /dist\/loader\.js/);
+});
+
+test("passes a package whose declared exports are all in the tarball", async () => {
+    const dir = await fixture({ manifestExtra: { main: "./dist/index.js", exports: { ".": "./dist/index.js" } } });
+    assert.deepEqual(await checkRelease({ dir, version: VERSION }), []);
 });

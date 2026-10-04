@@ -28,6 +28,7 @@
  *
  */
 
+import { execSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -41,6 +42,37 @@ async function readJson(dir, name, errors) {
         errors.push(`${name} could not be read: ${err.message.split("\n")[0]}`);
         return undefined;
     }
+}
+
+/**
+ * Every file package.json points consumers at: `main`, `module`, `types` and each
+ * target in `exports`, relative to the package root. Patterns containing `*` are
+ * skipped, since they name no single file.
+ */
+export function entryPoints(manifest) {
+    const found = new Set();
+    const add = (value) => {
+        if (typeof value === "string") found.add(value.replace(/^\.\//, ""));
+        else if (value && typeof value === "object") Object.values(value).forEach(add);
+    };
+    for (const key of ["main", "module", "types", "typings"]) add(manifest[key]);
+    add(manifest.exports);
+    return [...found].filter((path) => !path.includes("*"));
+}
+
+/** The entry points `manifest` declares that are not among the `packed` file paths. */
+export function missingEntryPoints(manifest, packed) {
+    return entryPoints(manifest).filter((path) => path !== "package.json" && !packed.includes(path));
+}
+
+/** The paths npm would put in the tarball for the package in `dir`. Publishes nothing. */
+function packedFiles(dir) {
+    const out = execSync("npm pack --dry-run --json --ignore-scripts", {
+        cwd: dir,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+    });
+    return JSON.parse(out)[0].files.map((file) => file.path);
 }
 
 /**
@@ -106,6 +138,21 @@ export async function checkRelease({ dir, version }) {
         errors.push(`dist/index.js could not be loaded: ${err.message.split("\n")[0]}`);
     }
 
+    // Every entry point package.json declares must exist in the tarball npm would
+    // publish, not merely on disk: a missing one makes `import` fail for every consumer.
+    if (pkg) {
+        try {
+            for (const path of missingEntryPoints(pkg, packedFiles(dir))) {
+                errors.push(
+                    `package.json declares ${path}, but the published package would not contain it. ` +
+                        `Build it and list it in "files", or remove the entry point.`,
+                );
+            }
+        } catch (err) {
+            errors.push(`the package contents could not be listed: ${err.message.split("\n")[0]}`);
+        }
+    }
+
     return errors;
 }
 
@@ -119,5 +166,8 @@ if (isMain) {
         for (const error of errors) console.log(`::error::${error}`);
         process.exit(1);
     }
-    console.log(`package.json, package-lock.json, CHANGELOG.md and dist/index.js all name ${version}.`);
+    console.log(
+        `package.json, package-lock.json, CHANGELOG.md and dist/index.js all name ${version}, ` +
+            `and every declared entry point is in the package.`,
+    );
 }
