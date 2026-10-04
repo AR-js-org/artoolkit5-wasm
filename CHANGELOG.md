@@ -46,6 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by `createARToolKit()`, since a version string is not an ARToolKit constant.
   ([#30](https://github.com/AR-js-org/artoolkit5-wasm/issues/30))
 
+### Removed
+
+- The `./loader` subpath export (`@ar-js-org/artoolkit5-wasm/loader`). It pointed at
+  `dist/loader.js`, which no release from 0.1.2 to 0.3.0 ever built or published, so
+  importing it always failed. `loadCameraFromUrl` and `addMarkerFromUrl` are, and always
+  were, exported from the package root. `dist/loader.d.ts` stays, since
+  `dist/index.d.ts` imports it. The release check now fails when any entry point declared
+  in `package.json` is missing from the tarball npm would publish.
+
 ## [0.3.0] - 2026-09-09
 
 ### Added

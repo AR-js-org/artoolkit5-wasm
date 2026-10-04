@@ -40,8 +40,9 @@ dry run means the release is *prepared*, not that it will *publish*.
 It stops before changing anything unless: it runs from `main`; the version is plain stable
 semver (no `v`, no suffix); `package.json`, `package-lock.json`, `CHANGELOG.md` and the
 built `dist/index.js` all name it; no tag names a different commit; the version is not
-already on npm; the repository is public; and rebuilding the wrapper reproduces the
-committed `dist/` wrapper files. The wasm is not compared: it is not byte-reproducible
+already on npm; the repository is public; every entry point declared in `package.json`
+(`main`, `types`, each `exports` target) is in the tarball `npm pack` would produce; and
+rebuilding the wrapper reproduces the committed `dist/` wrapper files. The wasm is not compared: it is not byte-reproducible
 across machines (issue #20).
 
 ## Publishing
