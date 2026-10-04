@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     branches: [ main, dev ]
+  # No branch filter: PRs are sometimes stacked on another feature branch, and a
+  # filter on the base branch would leave those with no CI at all.
   pull_request:
-    branches: [ main, dev ]
 
 jobs:
   build:
@@ -23,9 +24,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: |
-          rm -f package-lock.json
-          npm install
+        run: npm ci
 
       - name: Run C++ Linter
         run: npm run lint:cpp
@@ -37,3 +36,6 @@ jobs:
 
       - name: Build JS/TS Wrapper
         run: npm run build:wrap
+
+      - name: Run tests
+        run: npm test

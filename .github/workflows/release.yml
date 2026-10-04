@@ -1,0 +1,328 @@
+name: Release
+
+# Run manually from the Actions tab, from `main`. This workflow performs the
+# release: it checks that the release PR (version bump, changelog, dist/) is
+# merged and in sync, tags that commit, publishes to npm with OIDC Trusted
+# Publishing (no NPM_TOKEN) and creates the GitHub Release. It creates no commit.
+#
+# It is one workflow rather than two on purpose. A Release created with the
+# default GITHUB_TOKEN does not trigger other workflows, so a separate
+# `on: release: published` publisher would silently never fire.
+#
+# It is two *jobs* on purpose as well. Everything irreversible lives in
+# `release`, which carries a single `if: ${{ !inputs.dry_run }}` on the job
+# rather than on each step. A step added there inherits the guard, so a run with
+# dry_run set can never publish. npm never lets a version be replaced, so that
+# mistake would be unrecoverable.
+#
+# Authentication is OIDC Trusted Publishing: GitHub exchanges a short-lived JWT
+# with npm, so no token is stored or rotated. The trusted publisher must be
+# configured on npmjs.com for this repository and the filename `release.yml`.
+# Provenance comes from `publishConfig.provenance` in package.json.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Stable version to release, without a leading v (e.g. 0.4.0)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Run every check and show the result without tagging or publishing'
+        required: false
+        default: false
+        type: boolean
+
+# Two releases at once would race over the tag. Never `cancel-in-progress`:
+# cancelling a run that has already published leaves a version on npm with no tag
+# and no Release behind it, and npm will not allow it to be published again.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    outputs:
+      version: ${{ steps.validate.outputs.version }}
+      published: ${{ steps.npm_state.outputs.published }}
+
+    steps:
+      - name: Ensure releases run from main
+        if: ${{ github.ref_name != 'main' }}
+        run: |
+          echo "::error::Release workflow must be run from the main branch (current: ${GITHUB_REF_NAME})."
+          exit 1
+
+      # No submodules: build:wrap bundles the committed dist/artoolkit5.js and
+      # never touches WebARKitLib. fetch-depth 0 is for the tag checks below.
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      # Deliberately no `registry-url`. It makes setup-node write an .npmrc line
+      # `_authToken=${NODE_AUTH_TOKEN}`; with no token set that expands to empty,
+      # npm decides authentication is already configured and never performs the
+      # OIDC exchange (403 / ENEEDAUTH). registry.npmjs.org is npm's default.
+      # Learned the hard way in AR-js-org/artoolkit5-ts (see its MAINTAINERS.md).
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Verify npm CLI supports Trusted Publishing
+        run: |
+          NPM_VERSION="$(npm --version)"
+          echo "Node $(node --version), npm $NPM_VERSION"
+          # Trusted publishing needs npm 11.5.1 or newer.
+          node -e '
+            const have = process.argv[1].split(".").map(Number);
+            const need = [11, 5, 1];
+            for (let i = 0; i < 3; i++) {
+              if (have[i] > need[i]) process.exit(0);
+              if (have[i] < need[i]) process.exit(1);
+            }
+          ' "$NPM_VERSION" || { echo "::error::npm 11.5.1 or newer is required for Trusted Publishing. Found: $NPM_VERSION"; exit 1; }
+
+      # The version is read through env, never interpolated into the script.
+      # release-check refuses anything but plain MAJOR.MINOR.PATCH, so $VERSION
+      # is safe to use in the steps that follow.
+      - name: Validate the release
+        id: validate
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          node scripts/release-check.mjs "$INPUT_VERSION"
+          echo "VERSION=$INPUT_VERSION" >> "$GITHUB_ENV"
+          echo "TAG=v$INPUT_VERSION" >> "$GITHUB_ENV"
+          echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check the tag
+        run: |
+          TAG_EXISTS=false
+          if git show-ref --tags --verify --quiet "refs/tags/$TAG"; then
+            TAG_SHA="$(git rev-parse "refs/tags/$TAG^{commit}")"
+            HEAD_SHA="$(git rev-parse HEAD)"
+            if [ "$TAG_SHA" != "$HEAD_SHA" ]; then
+              echo "::error::Tag $TAG points to $TAG_SHA, but this run would release $HEAD_SHA. If the tag comes from an earlier run of this same release, use 'Re-run all jobs' on that run instead of dispatching a new one; otherwise delete the stale tag."
+              exit 1
+            fi
+            TAG_EXISTS=true
+          fi
+          echo "TAG_EXISTS=$TAG_EXISTS" >> "$GITHUB_ENV"
+
+      - name: Ensure the repository is public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node - <<'EOF'
+          const repo = process.env.GITHUB_REPOSITORY;
+          const headers = { Accept: 'application/vnd.github+json' };
+          if (process.env.GH_TOKEN) headers.Authorization = `Bearer ${process.env.GH_TOKEN}`;
+
+          fetch(`https://api.github.com/repos/${repo}`, { headers })
+            .then((res) => {
+              if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+              return res.json();
+            })
+            .then((body) => {
+              if (body.private !== false) {
+                console.error(`::error::${repo} is not reported as public, and npm cannot generate provenance from a private repository.`);
+                process.exit(1);
+              }
+              console.log('Repository is public; provenance can be generated.');
+            })
+            .catch((err) => {
+              console.error(`::error::Could not determine whether ${repo} is public: ${err.message}`);
+              process.exit(1);
+            });
+          EOF
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check the version is not already published
+        id: npm_state
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NAME="$(node -p "require('./package.json').name")"
+          STATUS=0
+          OUTPUT=$(npm view "$NAME@$VERSION" version 2>&1) || STATUS=$?
+
+          if [ "$STATUS" -ne 0 ]; then
+            if echo "$OUTPUT" | grep -qE "E404|404 Not Found"; then
+              echo "$NAME@$VERSION is available on npm."
+              echo "published=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::Failed to check npm registry for $NAME@$VERSION: $OUTPUT"
+            exit 1
+          fi
+
+          if [ "$TAG_EXISTS" != "true" ]; then
+            echo "::error::$NAME@$VERSION is already published on npm and no tag names this commit. A version cannot be replaced."
+            exit 1
+          fi
+
+          RELEASE="$(node - <<'EOF'
+          const url = `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/releases/tags/${process.env.TAG}`;
+          const headers = { Accept: 'application/vnd.github+json' };
+          if (process.env.GH_TOKEN) headers.Authorization = `Bearer ${process.env.GH_TOKEN}`;
+
+          fetch(url, { headers })
+            .then((res) => {
+              if (res.status === 404) return console.log('missing');
+              if (res.ok) return console.log('exists');
+              throw new Error(`GitHub API returned ${res.status}`);
+            })
+            .catch((err) => {
+              console.error(err.message);
+              process.exit(1);
+            });
+          EOF
+          )" || { echo "::error::Could not check for an existing GitHub Release."; exit 1; }
+
+          if [ "$RELEASE" != "missing" ]; then
+            echo "::error::$NAME@$VERSION is already published and its GitHub Release exists. Nothing left to release."
+            exit 1
+          fi
+
+          echo "::warning::$NAME@$VERSION is on npm and tag $TAG names this commit, but no GitHub Release exists. Recovery run: the release job will skip publishing and create the Release."
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build the wrapper
+        run: npm run build:wrap
+
+      # Only the wrapper outputs are compared. dist/artoolkit5.js and .wasm are
+      # excluded on purpose: the wasm is not byte-reproducible across machines
+      # (issue #20), so a rebuild here would differ from the committed one for
+      # reasons unrelated to the release.
+      - name: Verify the wrapper in dist/ is in sync
+        run: |
+          WRAPPER="dist/index.js dist/index.js.map dist/index.d.ts dist/index.d.ts.map dist/loader.d.ts dist/loader.d.ts.map"
+          # shellcheck disable=SC2086
+          if [ -n "$(git status --porcelain -- $WRAPPER)" ]; then
+            echo "::error::The wrapper in dist/ is out of sync with src/. Run 'npm run build:wrap' locally, commit dist/, and push before releasing."
+            # shellcheck disable=SC2086
+            git status --porcelain -- $WRAPPER
+            # shellcheck disable=SC2086
+            git diff --stat -- $WRAPPER
+            exit 1
+          fi
+          echo "The wrapper in dist/ is in sync with src/."
+
+      - name: Dry-run summary
+        if: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo "## 🏜️ Dry Run Complete"
+            echo ""
+            echo "All checks passed for version **$VERSION**."
+            echo "Re-run with \`dry_run = false\` to publish."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    needs: prepare
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write     # push the tag, create the Release
+      id-token: write     # OIDC token exchange with npm (Trusted Publishing)
+
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: v${{ needs.prepare.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # No `registry-url`: see the comment in the prepare job.
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Tag
+        run: |
+          if ! git show-ref --tags --verify --quiet "refs/tags/$TAG"; then
+            git tag "$TAG"
+          fi
+
+      - name: Push tag
+        run: git push origin "refs/tags/$TAG"
+
+      # Publishes the committed dist/, which `prepare` verified is in sync.
+      # Provenance is attested because publishConfig.provenance is true.
+      #
+      # `prepare` already decided whether to publish, but "Re-run failed jobs"
+      # re-runs only this job and reuses that old decision. If the publish had
+      # succeeded and a later step failed, publishing again would fail with E403.
+      # So ask npm again here: the step is safe to repeat.
+      - name: Publish to npm
+        if: ${{ needs.prepare.outputs.published != 'true' }}
+        run: |
+          NAME="$(node -p "require('./package.json').name")"
+          if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
+            echo "::notice::$NAME@$VERSION is already on npm; skipping the publish."
+          else
+            npm publish
+          fi
+
+      - name: Derive release notes
+        id: notes
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="$PREV_TAG..$TAG"
+            COMPARE_URL="https://github.com/${{ github.repository }}/compare/$PREV_TAG...$TAG"
+          else
+            RANGE="$TAG"
+            COMPARE_URL=""
+          fi
+
+          NOTES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --no-merges 2>/dev/null || echo "- Initial release")
+
+          {
+            echo "notes<<RELEASE_NOTES_EOF"
+            echo "## What's Changed"
+            echo ""
+            echo "$NOTES"
+            if [ -n "$COMPARE_URL" ]; then
+              echo ""
+              echo "**Full Changelog**: $COMPARE_URL"
+            fi
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NOTES: ${{ steps.notes.outputs.notes }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "$RELEASE_NOTES" \
+            --target "${{ github.sha }}"
+
+      - name: Release summary
+        run: |
+          {
+            echo "## 🚀 Released $TAG"
+            echo ""
+            echo "- **npm**: https://www.npmjs.com/package/@ar-js-org/artoolkit5-wasm/v/$VERSION"
+            echo "- **GitHub Release**: https://github.com/${{ github.repository }}/releases/tag/$TAG"
+            echo "- **Provenance**: attested via OIDC"
+          } >> "$GITHUB_STEP_SUMMARY"

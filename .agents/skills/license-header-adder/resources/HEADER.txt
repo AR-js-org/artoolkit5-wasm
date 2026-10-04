@@ -1,5 +1,5 @@
 /*
- *  emscripten-modules.d.ts
+ *  {{FILENAME}}
  *  artoolkit5-wasm
  *
  *  This file is part of artoolkit5-wasm - AR-js-org.
@@ -21,17 +21,9 @@
  *
  *  You should have received a copy of the MIT License along with
  *  artoolkit5-wasm. If not, see <https://opensource.org/licenses/MIT>.
- *
- *  This library wraps a WebAssembly build of ARToolkit5 (WebARKitLib), which
- *  is licensed under the GNU Lesser General Public License v3.0.
- *
+{{LINEAGE}}
  *  Copyright (c) 2026 AR-js-org
  *
  *  Author(s): Walter Perdan @kalwalt https://github.com/kalwalt
  *
  */
-
-declare module "*artoolkit5.js" {
-    const createEmscriptenModule: (options?: any) => any;
-    export default createEmscriptenModule;
-}

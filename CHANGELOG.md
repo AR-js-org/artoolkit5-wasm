@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-04
+
+### Added
+
+- `ARTOOLKIT5_WASM_VERSION` and `VERSION`, exported from the package entry point:
+  the version of this package, injected from `package.json` at build time. The version
+  was already generated at build time rather than hardcoded; it just could not be read
+  programmatically.
+- `ARTOOLKIT_CONSTANTS_VERSION` is now re-exported with the rest of the constants
+  (new in `@ar-js-org/artoolkit5-constants` 0.4.0).
+- `npm test`, covering the package's exports.
+- **Release workflow** (`.github/workflows/release.yml`), run manually from `main` with
+  `version` and `dry_run` inputs. It refuses to start unless `package.json`,
+  `package-lock.json`, `CHANGELOG.md` and the built `dist/index.js` name the requested
+  version, the tag is free (or already names the dispatched commit), npm does not have the
+  version, and rebuilding the wrapper reproduces the committed `dist/` wrapper files. It
+  then tags the commit (`vX.Y.Z`), publishes to npm with provenance through OIDC Trusted
+  Publishing (no `NPM_TOKEN`) and creates the GitHub Release. Pushes no commit. The
+  procedure, failure recovery and emergency publish are in `MAINTAINERS.md`. `scripts/release-check.mjs` holds the file checks and has tests.
+- `.nvmrc` (Node 24) and `.gitattributes` keeping `src/` and `dist/` LF. The committed
+  source maps used to embed CRLF copies of `src/` when built on Windows, which a Linux
+  rebuild cannot reproduce.
+
+### Changed
+
+- `repository`, `homepage` and `bugs` in `package.json` now use the real `AR-js-org`
+  casing (with `git+` on the repository URL), and `publishConfig` sets `access: public`
+  and `provenance: true`. Provenance attestation requires the repository URL to match.
+- `npm run build:wasm` no longer fails outside an interactive terminal: it passes `-it` to
+  Docker only when stdin and stdout are terminals and `CI` is unset, and sets
+  `MSYS_NO_PATHCONV=1` so Git Bash on Windows does not rewrite the container path.
+  `npm run lint:cpp` uses the `clang-format` installed in `node_modules/.bin` before
+  looking on `PATH`, so it runs after `npm install` with nothing else installed.
+  ([#27](https://github.com/AR-js-org/artoolkit5-wasm/issues/27))
+- CI installs with `npm ci` (it deleted the lockfile before), runs `npm test`, and now also runs
+  on pull requests stacked on another branch (it was limited to PRs into `main` and `dev`).
+- Depends on `@ar-js-org/artoolkit5-constants` `^0.4.0` (was `^0.3.0`) and the lockfile
+  now resolves 0.4.0, which declares the MIT licence. The previous lock pinned 0.3.0,
+  whose published metadata wrongly declared GPL-3.0; the licence terms never changed.
+  ([#31](https://github.com/AR-js-org/artoolkit5-wasm/issues/31))
+- `VERSION` is this package's version, **not** the constants package's. The constants
+  package began exporting a `VERSION` of its own in 0.4.0, which `export *` would
+  otherwise have passed through. Its version remains available as
+  `ARTOOLKIT_CONSTANTS_VERSION`. Neither name is added to the `constants` object returned
+  by `createARToolKit()`, since a version string is not an ARToolKit constant.
+  ([#30](https://github.com/AR-js-org/artoolkit5-wasm/issues/30))
+
+### Removed
+
+- The `./loader` subpath export (`@ar-js-org/artoolkit5-wasm/loader`). It pointed at
+  `dist/loader.js`, which no release from 0.1.2 to 0.3.0 ever built or published, so
+  importing it always failed. `loadCameraFromUrl` and `addMarkerFromUrl` are, and always
+  were, exported from the package root. `dist/loader.d.ts` stays, since
+  `dist/index.d.ts` imports it. The release check now fails when any entry point declared
+  in `package.json` is missing from the tarball npm would publish.
+
+### Notes
+
+Minor rather than patch: new exports, a new dependency floor, and one removed subpath.
+A 0.x minor is a breaking bound in semver, so `^0.3.0` does not pick this up on its own.
+
+The Emscripten artifacts (`dist/artoolkit5.js`, `dist/artoolkit5.wasm`) are byte-identical
+to `0.3.0`: this release rebuilds the TypeScript wrapper only, and the C++ is unchanged.
+Still a debug build, for the reason given under `0.1.3` (#19).
+
+`0.3.0` was published by hand: it has no provenance attestation, and its tag and GitHub
+Release (`v0.3.0`) were created afterwards, on the commit npm records as its `gitHead`.
+This release is prepared for the new Release workflow (npm Trusted Publishing).
+
 ## [0.3.0] - 2026-09-09
 
 ### Added
@@ -141,7 +210,8 @@ Initial published release.
 - CI, and the package published under the `@ar-js-org` npm scope under the MIT
   licence.
 
-[Unreleased]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.1.2...v0.1.3
