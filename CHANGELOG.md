@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The release check now also fails when a file listed in `package.json`'s `files` (the wasm,
+  its glue, the typings, the maps) is missing from the tarball `npm pack` would produce, not
+  only the declared entry points. npm silently leaves such a file out, so a release commit
+  without `dist/artoolkit5.wasm` would have published a package that cannot start its engine.
+  Presence only: the wasm is still not compared with a rebuild (#20).
+
 ## [0.4.0] - 2026-10-04
 
 ### Added

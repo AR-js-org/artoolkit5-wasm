@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { checkRelease, entryPoints, missingEntryPoints } from "../scripts/release-check.mjs";
+import { checkRelease, entryPoints, missingEntryPoints, missingFiles } from "../scripts/release-check.mjs";
 
 const VERSION = "0.4.0";
 
@@ -132,5 +132,45 @@ test("rejects a package that declares an export its tarball does not contain", a
 
 test("passes a package whose declared exports are all in the tarball", async () => {
     const dir = await fixture({ manifestExtra: { main: "./dist/index.js", exports: { ".": "./dist/index.js" } } });
+    assert.deepEqual(await checkRelease({ dir, version: VERSION }), []);
+});
+
+// npm silently leaves out a file listed in `files` that does not exist: no warning, no
+// error. The wasm and its glue are listed in `files` but are not entry points, so a release
+// commit without them would publish a package that cannot start its engine.
+test("missingFiles reports concrete `files` entries absent from the packed list", () => {
+    const manifest = { files: ["dist/index.js", "dist/artoolkit5.wasm"] };
+    assert.deepEqual(missingFiles(manifest, ["dist/index.js", "package.json"]), ["dist/artoolkit5.wasm"]);
+    assert.deepEqual(missingFiles(manifest, ["dist/index.js", "dist/artoolkit5.wasm"]), []);
+});
+
+test("missingFiles treats a directory entry as present when anything under it is packed", () => {
+    assert.deepEqual(missingFiles({ files: ["dist"] }, ["dist/index.js"]), []);
+    assert.deepEqual(missingFiles({ files: ["dist/"] }, ["dist/index.js"]), []);
+    assert.deepEqual(missingFiles({ files: ["dist"] }, ["package.json"]), ["dist"]);
+});
+
+test("missingFiles ignores globs, negations and a missing `files` field", () => {
+    assert.deepEqual(missingFiles({ files: ["dist/*.js", "!dist/skip.js"] }, []), []);
+    assert.deepEqual(missingFiles({}, []), []);
+});
+
+test("rejects a package whose entry points are fine but a listed binary is not in the tarball", async () => {
+    const dir = await fixture({
+        manifestExtra: {
+            main: "./dist/index.js",
+            exports: { ".": "./dist/index.js" },
+            files: ["dist/index.js", "dist/artoolkit5.wasm"],
+        },
+    });
+    const errors = await checkRelease({ dir, version: VERSION });
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /dist\/artoolkit5\.wasm/);
+});
+
+test("passes a package whose listed files are all in the tarball", async () => {
+    const dir = await fixture({
+        manifestExtra: { main: "./dist/index.js", exports: { ".": "./dist/index.js" }, files: ["dist/index.js"] },
+    });
     assert.deepEqual(await checkRelease({ dir, version: VERSION }), []);
 });
