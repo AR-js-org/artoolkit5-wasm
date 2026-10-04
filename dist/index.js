@@ -105,7 +105,7 @@ var s = 0, c = 1, l = 2, u = 3, d = 5, ee = 13, te = 12, ne = 0, re = 1, f = 2, 
 	AR_USE_TRACKING_HISTORY: () => 0,
 	AR_USE_TRACKING_HISTORY_V2: () => 2,
 	VERSION: () => X
-}), be = -1, xe = 0, Q = 1, $ = "0.3.0", Se = $, { VERSION: Ce, ARTOOLKIT_CONSTANTS_VERSION: we, ...Te } = ye;
+}), be = -1, xe = 0, Q = 1, $ = "0.4.0", Se = $, { VERSION: Ce, ARTOOLKIT_CONSTANTS_VERSION: we, ...Te } = ye;
 async function Ee(t = {}) {
 	t.quiet || console.log(`artoolkit5-wasm v${$}`);
 	let n = await e({

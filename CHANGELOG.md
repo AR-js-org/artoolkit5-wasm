@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-04
+
 ### Added
 
 - `ARTOOLKIT5_WASM_VERSION` and `VERSION`, exported from the package entry point:
@@ -60,6 +62,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   were, exported from the package root. `dist/loader.d.ts` stays, since
   `dist/index.d.ts` imports it. The release check now fails when any entry point declared
   in `package.json` is missing from the tarball npm would publish.
+
+### Notes
+
+Minor rather than patch: new exports, a new dependency floor, and one removed subpath.
+A 0.x minor is a breaking bound in semver, so `^0.3.0` does not pick this up on its own.
+
+The Emscripten artifacts (`dist/artoolkit5.js`, `dist/artoolkit5.wasm`) are byte-identical
+to `0.3.0`: this release rebuilds the TypeScript wrapper only, and the C++ is unchanged.
+Still a debug build, for the reason given under `0.1.3` (#19).
+
+`0.3.0` was published by hand: it has no provenance attestation, and its tag and GitHub
+Release (`v0.3.0`) were created afterwards, on the commit npm records as its `gitHead`.
+This release is prepared for the new Release workflow (npm Trusted Publishing).
 
 ## [0.3.0] - 2026-09-09
 
@@ -195,7 +210,8 @@ Initial published release.
 - CI, and the package published under the `@ar-js-org` npm scope under the MIT
   licence.
 
-[Unreleased]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.1.2...v0.1.3
