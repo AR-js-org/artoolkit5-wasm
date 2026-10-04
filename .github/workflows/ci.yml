@@ -37,3 +37,6 @@ jobs:
 
       - name: Build JS/TS Wrapper
         run: npm run build:wrap
+
+      - name: Run tests
+        run: npm test
