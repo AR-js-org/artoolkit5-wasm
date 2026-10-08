@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without `dist/artoolkit5.wasm` would have published a package that cannot start its engine.
   Presence only: the wasm is still not compared with a rebuild (#20).
 
+### Fixed
+
+- `dist/artoolkit5.wasm` is reachable through `package.json` `"exports"`
+  (`@ar-js-org/artoolkit5-wasm/dist/artoolkit5.wasm`). The binary was already published,
+  but the exports map listed only `"."`, so a bundler import such as Vite's
+  `import wasmUrl from '@ar-js-org/artoolkit5-wasm/dist/artoolkit5.wasm?url'` failed with
+  `Missing "./dist/artoolkit5.wasm" specifier`. arjs-plugin-artoolkit, which needs the URL
+  passed as `wasmUrl`, documents exactly that import; consumers had to alias it to the file.
+
 ## [0.4.0] - 2026-10-04
 
 ### Added
