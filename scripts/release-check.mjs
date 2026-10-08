@@ -69,13 +69,16 @@ export function missingEntryPoints(manifest, packed) {
  * The entries of the `files` field that name something concrete but are not among the
  * `packed` paths. npm silently leaves out a listed file that does not exist, so a release
  * commit missing the wasm or its glue would publish without either. A directory entry
- * counts as present when anything under it is packed; globs and negations are skipped.
+ * counts as present when anything under it is packed, the package root (`.`, `./`) when
+ * anything is packed at all; globs and negations are skipped.
  */
 export function missingFiles(manifest, packed) {
     const listed = Array.isArray(manifest.files) ? manifest.files : [];
     return listed.filter((entry) => {
         if (typeof entry !== "string" || entry.startsWith("!") || /[*?[\]{}]/.test(entry)) return false;
         const name = entry.replace(/^\.\//, "");
+        // `.` and `./` name the package root, present whenever anything is packed.
+        if (name === "" || name === ".") return packed.length === 0;
         const dir = name.replace(/\/+$/, "") + "/";
         return !packed.some((path) => path === name || path.startsWith(dir));
     });

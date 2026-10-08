@@ -150,6 +150,12 @@ test("missingFiles treats a directory entry as present when anything under it is
     assert.deepEqual(missingFiles({ files: ["dist"] }, ["package.json"]), ["dist"]);
 });
 
+test("missingFiles treats the package root, `.` or `./`, as present when anything is packed", () => {
+    assert.deepEqual(missingFiles({ files: ["."] }, ["dist/index.js"]), []);
+    assert.deepEqual(missingFiles({ files: ["./"] }, ["dist/index.js"]), []);
+    assert.deepEqual(missingFiles({ files: [".", "./"] }, []), [".", "./"]);
+});
+
 test("missingFiles ignores globs, negations and a missing `files` field", () => {
     assert.deepEqual(missingFiles({ files: ["dist/*.js", "!dist/skip.js"] }, []), []);
     assert.deepEqual(missingFiles({}, []), []);
