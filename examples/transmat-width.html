@@ -16,7 +16,8 @@
 
   // ?wasm=<dir> loads the binary from another directory, e.g. an older build
   // to compare against.
-  const wasmDir = new URLSearchParams(location.search).get("wasm") || "./../dist/";
+  // A trailing slash is added if missing, so `?wasm=../dist` works too.
+  const wasmDir = (new URLSearchParams(location.search).get("wasm") || "./../dist/").replace(/\/?$/, "/");
   const { default: createModule } = await import(wasmDir + "artoolkit5.js");
 
   const out = document.getElementById("out");
@@ -38,14 +39,21 @@
 
   // The transform buffer is both the vertex input of setMarkerInfoVertex and
   // the pose output, and Cont also reads its initial pose from it. So Cont
-  // gets the plain solution for the same width as its starting pose.
+  // starts from the plain solution at a fixed width, INIT_WIDTH, different
+  // from both widths under test: a Cont that ignored its width would return
+  // that starting pose and give a ratio of 1.
+  const INIT_WIDTH = 60;
   function solve(width, cont) {
     const base = core.getTransform() / 8;
     mod.HEAPF64.set(corners, base);
     core.setMarkerInfoVertex(-1);
     core.setMarkerInfoDir(-1, 0);
-    core.getTransMatSquare(-1, width);
-    if (cont) core.getTransMatSquareCont(-1, width);
+    if (cont) {
+      core.getTransMatSquare(-1, INIT_WIDTH);
+      core.getTransMatSquareCont(-1, width);
+    } else {
+      core.getTransMatSquare(-1, width);
+    }
     const t = mod.HEAPF64.subarray(base, base + 12);
     return [t[3], t[7], t[11]];
   }
