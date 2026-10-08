@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-08
+
 ### Changed
 
 - The release check now also fails when a file listed in `package.json`'s `files` (the wasm,
@@ -27,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `arGetTransMatSquare` does. It was declared `int`, so a fractional width was truncated:
   `40.5` was solved as `40`, and a width in metres such as `0.08` became `0`.
   `examples/transmat-width.html` checks it in the browser (#9).
+
+### Notes
+
+`dist/artoolkit5.wasm` and `dist/artoolkit5.js` are rebuilt, because the C++ changed: the
+width fix above, and the `ARToolKitCore` globals now defined once instead of once per
+including file (part of #24, no behaviour change). The build keeps the configuration the
+previous binary shipped in, a debug build (#19). No API changes; `^0.4.0` picks this up.
 
 ## [0.4.0] - 2026-10-04
 
@@ -231,7 +240,8 @@ Initial published release.
 - CI, and the package published under the `@ar-js-org` npm scope under the MIT
   licence.
 
-[Unreleased]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.1.3...v0.2.0
