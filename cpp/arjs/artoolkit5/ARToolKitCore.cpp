@@ -41,6 +41,11 @@ namespace arjs
 {
     namespace artoolkit5
     {
+        int gARControllerID = 0;
+        int gCameraID = 0;
+        ARdouble gTransform[3][4];
+        ARMarkerInfo gMarkerInfo;
+
         std::unordered_map<int, ARParam> cameraParams;
 
         // ======================================================================
@@ -591,7 +596,7 @@ namespace arjs
             return 0;
         }
 
-        int ARToolKitCore::getTransMatSquare(int markerIndex, int markerWidth)
+        int ARToolKitCore::getTransMatSquare(int markerIndex, ARdouble markerWidth)
         {
             if (this->arhandle->marker_num <= markerIndex)
             {
@@ -604,7 +609,7 @@ namespace arjs
             return 0;
         }
 
-        int ARToolKitCore::getTransMatSquareCont(int markerIndex, int markerWidth)
+        int ARToolKitCore::getTransMatSquareCont(int markerIndex, ARdouble markerWidth)
         {
             if (this->arhandle->marker_num <= markerIndex)
             {

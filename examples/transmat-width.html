@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>artoolkit5 wasm: getTransMatSquare marker width</title>
+</head>
+<body>
+<pre id="out"></pre>
+
+<script type="module">
+  // Regression check for #9: the marker width reaches arGetTransMatSquare as a
+  // double. The same image square is solved twice, with widths 80 and 40.5;
+  // the translation scales linearly with the width, so the ratio must be
+  // 40.5 / 80 = 0.50625. A width truncated to an int gives 40 / 80 = 0.5.
+  import { loadCameraFromUrl } from "./../dist/index.js";
+
+  // ?wasm=<dir> loads the binary from another directory, e.g. an older build
+  // to compare against.
+  // A trailing slash is added if missing, so `?wasm=../dist` works too.
+  const wasmDir = (new URLSearchParams(location.search).get("wasm") || "./../dist/").replace(/\/?$/, "/");
+  const { default: createModule } = await import(wasmDir + "artoolkit5.js");
+
+  const out = document.getElementById("out");
+  const say = (line) => {
+    out.textContent += line + "\n";
+    console.log(line);
+  };
+
+  const mod = await createModule({ locateFile: (path) => wasmDir + path });
+  const core = new mod.ARToolKitCore();
+  const cameraId = await loadCameraFromUrl(mod, core, "./data/camera_para.dat");
+  await core.setup(640, 480, cameraId);
+
+  // A slightly tilted square near the image centre, as setMarkerInfoVertex
+  // reads it from the transform buffer: [x0, y0, x1, y1] then [x2, y2, x3, y3].
+  // Not an exact axis-aligned square: that is a degenerate input for the pose
+  // initialisation, which then diverges for some widths (40.5, 41).
+  const corners = [262, 183, 372, 195, 365, 296, 268, 287];
+
+  // The transform buffer is both the vertex input of setMarkerInfoVertex and
+  // the pose output, and Cont also reads its initial pose from it. So Cont
+  // starts from the plain solution at a fixed width, INIT_WIDTH, different
+  // from both widths under test: a Cont that ignored its width would return
+  // that starting pose and give a ratio of 1.
+  const INIT_WIDTH = 60;
+  function solve(width, cont) {
+    const base = core.getTransform() / 8;
+    mod.HEAPF64.set(corners, base);
+    core.setMarkerInfoVertex(-1);
+    core.setMarkerInfoDir(-1, 0);
+    if (cont) {
+      core.getTransMatSquare(-1, INIT_WIDTH);
+      core.getTransMatSquareCont(-1, width);
+    } else {
+      core.getTransMatSquare(-1, width);
+    }
+    const t = mod.HEAPF64.subarray(base, base + 12);
+    return [t[3], t[7], t[11]];
+  }
+
+  let failures = 0;
+  for (const cont of [false, true]) {
+    const name = cont ? "getTransMatSquareCont" : "getTransMatSquare";
+    const ref = solve(80, cont);
+    const half = solve(40.5, cont);
+    const ratio = half[2] / ref[2];
+    const ok = Math.abs(ratio - 40.5 / 80) < 1e-3;
+    if (!ok) failures++;
+    say(`${ok ? "PASS" : "FAIL"} ${name}: tz(40.5) / tz(80) = ${ratio.toFixed(5)}, expected 0.50625`);
+  }
+
+  say(failures ? `FAILED (${failures})` : "ALL PASS");
+  document.title = failures ? "FAIL" : "PASS";
+</script>
+</body>
+</html>
