@@ -41,9 +41,14 @@ It stops before changing anything unless: it runs from `main`; the version is pl
 semver (no `v`, no suffix); `package.json`, `package-lock.json`, `CHANGELOG.md` and the
 built `dist/index.js` all name it; no tag names a different commit; the version is not
 already on npm; the repository is public; every entry point declared in `package.json`
-(`main`, `types`, each `exports` target) is in the tarball `npm pack` would produce; and
-rebuilding the wrapper reproduces the committed `dist/` wrapper files. The wasm is not compared: it is not byte-reproducible
-across machines (issue #20).
+(`main`, `types`, each `exports` target) and every file it lists in `files` (the wasm, its
+glue, the typings) is in the tarball `npm pack` would produce; and rebuilding the wrapper
+reproduces the committed `dist/` wrapper files.
+
+The tarball check matters because npm silently leaves out a file listed in `files` that does
+not exist: no warning, no error. It checks presence only. The wasm is not compared with a
+rebuild: it is not byte-reproducible across machines (issue #20), so a stale wasm would still
+pass.
 
 ## Publishing
 
