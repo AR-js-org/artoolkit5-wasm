@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `import wasmUrl from '@ar-js-org/artoolkit5-wasm/dist/artoolkit5.wasm?url'` failed with
   `Missing "./dist/artoolkit5.wasm" specifier`. arjs-plugin-artoolkit, which needs the URL
   passed as `wasmUrl`, documents exactly that import; consumers had to alias it to the file.
+- `getTransMatSquare` and `getTransMatSquareCont` take the marker width as a double, as
+  `arGetTransMatSquare` does. It was declared `int`, so a fractional width was truncated:
+  `40.5` was solved as `40`, and a width in metres such as `0.08` became `0`.
+  `examples/transmat-width.html` checks it in the browser (#9).
 
 ## [0.4.0] - 2026-10-04
 

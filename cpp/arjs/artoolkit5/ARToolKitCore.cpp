@@ -591,7 +591,7 @@ namespace arjs
             return 0;
         }
 
-        int ARToolKitCore::getTransMatSquare(int markerIndex, int markerWidth)
+        int ARToolKitCore::getTransMatSquare(int markerIndex, ARdouble markerWidth)
         {
             if (this->arhandle->marker_num <= markerIndex)
             {
@@ -604,7 +604,7 @@ namespace arjs
             return 0;
         }
 
-        int ARToolKitCore::getTransMatSquareCont(int markerIndex, int markerWidth)
+        int ARToolKitCore::getTransMatSquareCont(int markerIndex, ARdouble markerWidth)
         {
             if (this->arhandle->marker_num <= markerIndex)
             {

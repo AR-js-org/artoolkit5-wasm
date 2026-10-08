@@ -108,8 +108,8 @@ namespace arjs
             emscripten::val getMarkerInfo(int markerIndex);
             int setMarkerInfoDir(int markerIndex, int dir);
             int setMarkerInfoVertex(int markerIndex);
-            int getTransMatSquare(int markerIndex, int markerWidth);
-            int getTransMatSquareCont(int markerIndex, int markerWidth);
+            int getTransMatSquare(int markerIndex, ARdouble markerWidth);
+            int getTransMatSquareCont(int markerIndex, ARdouble markerWidth);
             std::intptr_t getTransform();
 
             // Debug & Utils
