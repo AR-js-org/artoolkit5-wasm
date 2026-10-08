@@ -65,6 +65,25 @@ export function missingEntryPoints(manifest, packed) {
     return entryPoints(manifest).filter((path) => path !== "package.json" && !packed.includes(path));
 }
 
+/**
+ * The entries of the `files` field that name something concrete but are not among the
+ * `packed` paths. npm silently leaves out a listed file that does not exist, so a release
+ * commit missing the wasm or its glue would publish without either. A directory entry
+ * counts as present when anything under it is packed, the package root (`.`, `./`) when
+ * anything is packed at all; globs and negations are skipped.
+ */
+export function missingFiles(manifest, packed) {
+    const listed = Array.isArray(manifest.files) ? manifest.files : [];
+    return listed.filter((entry) => {
+        if (typeof entry !== "string" || entry.startsWith("!") || /[*?[\]{}]/.test(entry)) return false;
+        const name = entry.replace(/^\.\//, "");
+        // `.` and `./` name the package root, present whenever anything is packed.
+        if (name === "" || name === ".") return packed.length === 0;
+        const dir = name.replace(/\/+$/, "") + "/";
+        return !packed.some((path) => path === name || path.startsWith(dir));
+    });
+}
+
 /** The paths npm would put in the tarball for the package in `dir`. Publishes nothing. */
 function packedFiles(dir) {
     const out = execSync("npm pack --dry-run --json --ignore-scripts", {
@@ -140,12 +159,20 @@ export async function checkRelease({ dir, version }) {
 
     // Every entry point package.json declares must exist in the tarball npm would
     // publish, not merely on disk: a missing one makes `import` fail for every consumer.
+    // The same goes for every file listed in `files` (the wasm, its glue, the typings).
     if (pkg) {
         try {
-            for (const path of missingEntryPoints(pkg, packedFiles(dir))) {
+            const packed = packedFiles(dir);
+            for (const path of missingEntryPoints(pkg, packed)) {
                 errors.push(
                     `package.json declares ${path}, but the published package would not contain it. ` +
                         `Build it and list it in "files", or remove the entry point.`,
+                );
+            }
+            for (const path of missingFiles(pkg, packed)) {
+                errors.push(
+                    `package.json lists ${path} in "files", but the published package would not contain it ` +
+                        `(npm leaves a missing listed file out without a warning). Build or restore it before releasing.`,
                 );
             }
         } catch (err) {

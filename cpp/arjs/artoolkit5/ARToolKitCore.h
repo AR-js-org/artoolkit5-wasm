@@ -48,15 +48,16 @@ namespace arjs
 {
     namespace artoolkit5
     {
-        static int gARControllerID = 0;
-        static int gCameraID = 0;
-        static ARdouble gTransform[3][4];
+        // Shared state, defined once in ARToolKitCore.cpp. `static` here would
+        // give every file including this header its own private copy (#24).
+        extern int gARControllerID;
+        extern int gCameraID;
+        extern ARdouble gTransform[3][4];
+        extern ARMarkerInfo gMarkerInfo;
 
-        static int ARCONTROLLER_NOT_FOUND = -1;
-        static int MULTIMARKER_NOT_FOUND = -2;
-        static int MARKER_INDEX_OUT_OF_BOUNDS = -3;
-
-        static ARMarkerInfo gMarkerInfo;
+        inline constexpr int ARCONTROLLER_NOT_FOUND = -1;
+        inline constexpr int MULTIMARKER_NOT_FOUND = -2;
+        inline constexpr int MARKER_INDEX_OUT_OF_BOUNDS = -3;
 
         extern std::unordered_map<int, ARParam> cameraParams;
 
@@ -108,8 +109,8 @@ namespace arjs
             emscripten::val getMarkerInfo(int markerIndex);
             int setMarkerInfoDir(int markerIndex, int dir);
             int setMarkerInfoVertex(int markerIndex);
-            int getTransMatSquare(int markerIndex, int markerWidth);
-            int getTransMatSquareCont(int markerIndex, int markerWidth);
+            int getTransMatSquare(int markerIndex, ARdouble markerWidth);
+            int getTransMatSquareCont(int markerIndex, ARdouble markerWidth);
             std::intptr_t getTransform();
 
             // Debug & Utils
