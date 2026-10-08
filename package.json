@@ -36,7 +36,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./dist/artoolkit5.wasm": "./dist/artoolkit5.wasm"
   },
   "files": [
     "dist/index.js",
