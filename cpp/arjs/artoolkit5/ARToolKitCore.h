@@ -132,6 +132,8 @@ namespace arjs
             std::unique_ptr<ARUint8[]> videoFrame;
             int videoFrameSize;
             std::unique_ptr<ARUint8[]> videoLuma;
+            // RGBA -> luma converter, created by setup() and kept across frames.
+            webarkit::WebARKitLumaInfo* lumaInfo;
 
             int width;
             int height;

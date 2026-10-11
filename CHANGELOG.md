@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `examples/passvideodata.html`: detects the barcode in `examples/data/marker_05_3x3.jpg` from a
+  still frame, with no camera, and checks the `passVideoData` buffer-size handling below. Pass
+  `?wasm=<dir>` to run it against another build.
+
+### Changed
+
+- `passVideoData` copies the frame straight into the engine's own buffer with one bulk
+  `TypedArray.prototype.set`, instead of building a `std::vector` on every call (allocated,
+  zero-filled, filled, then copied a second time). The RGBA → luma converter is created in
+  `setup()` and kept across frames instead of being allocated and freed on every frame. Measured
+  in Chromium on the same machine, before → after, per frame:
+
+  | | 640×480 | 1280×720 |
+  |---|---|---|
+  | internal luma (`passVideoData(frame, [], true)`) | 1.17 → 0.51 ms | 3.74 → 1.6–2.1 ms |
+  | external luma (no conversion: the copy alone) | 0.83 → 0.09 ms | 2.92 → 0.24 ms |
+
+  What remains with internal luma is mostly the scalar luma conversion, which the build does not
+  compile with SIMD (#49). `examples/passvideodata.html` prints these figures (#10).
+
+### Fixed
+
+- `passVideoData` returns `-1` and writes nothing when the frame is not exactly
+  `width × height × 4` bytes, or, with `internalLuma` false, when the luma buffer is not
+  `width × height`. A larger frame used to be copied past the end of the frame buffer, corrupting
+  the wasm heap, and a smaller one kept the previous frame's tail. It also returns `-1` before
+  `setup()` and after `teardown()`, where it returned `0` (#10).
+- The README's frame-loop example tested `detectMarker()`'s return value as a marker count. It is
+  a status, `0` on success, so the example never reached its detection loop. It now reads
+  `getMarkerNum()`.
+
+### Notes
+
+The wasm is rebuilt because the C++ changed, in the same debug configuration as before (#19). No
+binding changes: `dist/artoolkit5.js` differs only in dropping the now-unused
+`_emval_array_to_memory_view` import and in shifted `ASM_CONSTS` addresses. artoolkit5-ts and
+arjs-plugin-artoolkit pass a canvas frame of the size they set up, so they are unaffected; a
+caller passing a buffer of another size now gets `-1` instead of corrupted memory.
+
 ## [0.4.1] - 2026-10-08
 
 ### Changed
