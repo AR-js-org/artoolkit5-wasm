@@ -53,7 +53,8 @@ namespace arjs
         // ======================================================================
 
         ARToolKitCore::ARToolKitCore()
-            : id(0), paramLT(nullptr), videoFrame(nullptr), videoFrameSize(0), videoLuma(nullptr), width(0), height(0),
+            : id(0), paramLT(nullptr), videoFrame(nullptr), videoFrameSize(0), videoLuma(nullptr), lumaInfo(nullptr),
+              width(0), height(0),
 
               arhandle(nullptr), arPattHandle(nullptr), ar3DHandle(nullptr), nearPlane(0.0001), farPlane(1000.0),
               patt_id(0) // Running pattern marker id
@@ -80,6 +81,14 @@ namespace arjs
             this->videoFrame = std::unique_ptr<ARUint8[]>(new ARUint8[this->videoFrameSize]);
             this->videoLuma = std::unique_ptr<ARUint8[]>(new ARUint8[this->width * this->height]);
 
+            // Frees the converter of an earlier setup(), which may have had another size.
+            webarkit::webarkitVideoLumaFinal(&this->lumaInfo);
+            this->lumaInfo = webarkit::webarkitVideoLumaInit(this->width, this->height, true);
+            if (!this->lumaInfo)
+            {
+                ARLOGe("setup(): Error: webarkitVideoLumaInit.\n");
+            }
+
             if ((this->arPattHandle = arPattCreateHandle()) == NULL)
             {
                 ARLOGe("setup(): Error: arPattCreateHandle.\n");
@@ -98,6 +107,7 @@ namespace arjs
             this->videoFrame.reset();
             this->videoLuma.reset();
             this->videoFrameSize = 0;
+            webarkit::webarkitVideoLumaFinal(&this->lumaInfo);
 
             deleteHandle();
 
@@ -247,46 +257,48 @@ namespace arjs
 
         int ARToolKitCore::passVideoData(emscripten::val videoFrame, emscripten::val videoLuma, bool internalLuma)
         {
-            auto vf = emscripten::convertJSArrayToNumberVector<uint8_t>(videoFrame);
-            auto vl = emscripten::convertJSArrayToNumberVector<uint8_t>(videoLuma);
+            if (!this->videoFrame || !this->videoLuma || !this->lumaInfo)
+            {
+                ARLOGe("passVideoData(): no frame buffer, call setup() first.");
+                return -1;
+            }
+
+            // Check every length before writing anything, so a rejected call leaves the
+            // previous frame intact.
+            const size_t frameSize = static_cast<size_t>(this->videoFrameSize);
+            const size_t lumaSize = static_cast<size_t>(this->width) * static_cast<size_t>(this->height);
+
+            const size_t frameLength = videoFrame["length"].as<size_t>();
+            if (frameLength != frameSize)
+            {
+                ARLOGe("passVideoData(): frame has %zu bytes, expected %zu.", frameLength, frameSize);
+                return -1;
+            }
+            if (!internalLuma)
+            {
+                const size_t lumaLength = videoLuma["length"].as<size_t>();
+                if (lumaLength != lumaSize)
+                {
+                    ARLOGe("passVideoData(): luma has %zu bytes, expected %zu.", lumaLength, lumaSize);
+                    return -1;
+                }
+            }
+
+            // One TypedArray.prototype.set straight into the engine's buffer. The view is
+            // created and used within one statement, and set() allocates no wasm memory, so
+            // heap growth cannot detach it in between.
+            emscripten::val(emscripten::typed_memory_view(frameSize, this->videoFrame.get()))
+                .call<void>("set", videoFrame);
 
             if (internalLuma)
             {
-                auto vli = webarkit::webarkitVideoLumaInit(this->width, this->height, true);
-                if (!vli)
-                {
-                    ARLOGe("Failed to initialize WebARKitLumaInfo.");
-                    return -1;
-                }
-
-                auto out = webarkit::webarkitVideoLuma(vli, vf.data());
-                if (!out)
-                {
-                    ARLOGe("Failed to process video luma.");
-                    webarkit::webarkitVideoLumaFinal(&vli);
-                    return -1;
-                }
-                if (this->videoLuma)
-                {
-                    ARLOGd("Copy videoLuma with simd !");
-                    std::copy(out, out + this->width * this->height, this->videoLuma.get());
-                    webarkit::webarkitVideoLumaFinal(&vli);
-                }
+                const uint8_t* luma = webarkit::webarkitVideoLuma(this->lumaInfo, this->videoFrame.get());
+                std::copy(luma, luma + lumaSize, this->videoLuma.get());
             }
-
-            // Copy data instead of just assigning pointers
-            if (this->videoFrame)
+            else
             {
-                std::copy(vf.begin(), vf.end(), this->videoFrame.get());
-            }
-
-            if (this->videoLuma)
-            {
-                if (!internalLuma)
-                {
-                    ARLOGd("Inside videoLuma no simd !");
-                    std::copy(vl.begin(), vl.end(), this->videoLuma.get());
-                }
+                emscripten::val(emscripten::typed_memory_view(lumaSize, this->videoLuma.get()))
+                    .call<void>("set", videoLuma);
             }
             return 0;
         };

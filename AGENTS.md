@@ -27,7 +27,7 @@ src/
   loader.ts                   loadCameraFromUrl(), addMarkerFromUrl()
 dist/                         COMMITTED build output, see below
 scripts/                      build-wasm-docker.mjs, clang-format.mjs, release-check.mjs
-examples/                     smoke.html, webcam.html, node/smoke.mjs (manual checks)
+examples/                     smoke.html, webcam.html, transmat-width.html, passvideodata.html, node/smoke.mjs (manual checks)
 docs/                         design notes, e.g. DESIGN-per-mode-marker-fields.md
 ```
 
@@ -35,6 +35,8 @@ docs/                         design notes, e.g. DESIGN-per-mode-marker-fields.m
 Nothing tests the wasm: the committed glue is built for `ENVIRONMENT=web` and cannot be
 instantiated in Node. Verify C++ and binding changes with the examples, and say plainly
 when you could not (the webcam example needs a camera and a printed Hiro marker).
+`examples/passvideodata.html` detects the barcode in `data/marker_05_3x3.jpg` from a still frame,
+so it exercises detection and `getMarkerInfo` on a detected marker without a camera.
 
 ## Setup
 
