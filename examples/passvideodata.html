@@ -1,0 +1,186 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>artoolkit5 wasm: passVideoData</title>
+</head>
+<body>
+<pre id="out"></pre>
+
+<script type="module">
+  // Checks for #10, no camera needed. The 3x3 barcode in data/marker_05_3x3.jpg
+  // is drawn onto a white canvas and passed to passVideoData; detection must
+  // then find barcode 5. This also runs getMarkerInfo on a detected marker.
+  //
+  // passVideoData must accept a frame of exactly width x height x 4 bytes, as a
+  // Uint8ClampedArray, a Uint8Array or a plain Array, with the luma computed
+  // internally or passed in. It must return -1, and leave the previous frame
+  // intact, for a buffer of any other size, and before setup / after teardown.
+  //
+  // The BENCH lines time passVideoData; they are informational, not checks.
+  import { loadCameraFromUrl, AR_MATRIX_CODE_DETECTION, AR_MATRIX_CODE_3x3 } from "./../dist/index.js";
+
+  // ?wasm=<dir> loads the binary from another directory, e.g. an older build
+  // to compare against.
+  // A trailing slash is added if missing, so `?wasm=../dist` works too.
+  const wasmDir = (new URLSearchParams(location.search).get("wasm") || "./../dist/").replace(/\/?$/, "/");
+  const { default: createModule } = await import(wasmDir + "artoolkit5.js");
+
+  const out = document.getElementById("out");
+  const say = (line) => {
+    out.textContent += line + "\n";
+    console.log(line);
+  };
+
+  const W = 640;
+  const H = 480;
+  const MARKER_SIZE = 252; // data/marker_05_3x3.jpg is 252x252
+
+  const marker = new Image();
+  marker.src = "./data/marker_05_3x3.jpg";
+  await marker.decode();
+
+  // Every check gets its own module: an older build that copies past the end
+  // of its frame buffer must not corrupt the heap the next check runs on.
+  const newModule = () => createModule({ locateFile: (path) => wasmDir + path });
+
+  function detectBarcodes(core) {
+    core.setPatternDetectionMode(AR_MATRIX_CODE_DETECTION);
+    core.setMatrixCodeType(AR_MATRIX_CODE_3x3);
+  }
+
+  async function freshCore(w, h) {
+    const mod = await newModule();
+    const core = new mod.ARToolKitCore();
+    const cameraId = await loadCameraFromUrl(mod, core, "./data/camera_para.dat");
+    core.setup(w, h, cameraId);
+    detectBarcodes(core);
+    return { mod, core, cameraId };
+  }
+
+  function stillFrame(w, h) {
+    const ctx = new OffscreenCanvas(w, h).getContext("2d", { willReadFrequently: true });
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(marker, (w - MARKER_SIZE) / 2, (h - MARKER_SIZE) / 2, MARKER_SIZE, MARKER_SIZE);
+    return ctx.getImageData(0, 0, w, h).data;
+  }
+
+  function detectsBarcode5(core) {
+    core.detectMarker();
+    const n = core.getMarkerNum();
+    for (let i = 0; i < n; i++) {
+      if (core.getMarkerInfo(i).idMatrix === 5) return true;
+    }
+    return false;
+  }
+
+  // The CCIR 601 weights WebARKitVideoLuma uses.
+  function jsLuma(frame, w, h) {
+    const luma = new Uint8Array(w * h);
+    for (let p = 0, q = 0; p < luma.length; p++, q += 4) {
+      luma[p] = (77 * frame[q] + 150 * frame[q + 1] + 29 * frame[q + 2]) >> 8;
+    }
+    return luma;
+  }
+
+  const frame = stillFrame(W, H);
+
+  // Passes when the call returns 0 and barcode 5 is then detected.
+  function accepted(core, videoFrame, videoLuma, internalLuma) {
+    const ret = core.passVideoData(videoFrame, videoLuma, internalLuma);
+    if (ret !== 0) return `returned ${ret}, expected 0`;
+    if (!detectsBarcode5(core)) return "barcode 5 not detected";
+    return null;
+  }
+
+  // Passes when the call returns -1 and a correct frame afterwards still works.
+  function rejected(core, videoFrame, videoLuma, internalLuma) {
+    const ret = core.passVideoData(videoFrame, videoLuma, internalLuma);
+    if (ret !== -1) return `returned ${ret}, expected -1`;
+    const after = accepted(core, frame, [], true);
+    return after && `rejected, but the next correct frame failed: ${after}`;
+  }
+
+  const checks = [
+    ["still frame, Uint8ClampedArray, internal luma", async () => {
+      const { core } = await freshCore(W, H);
+      return accepted(core, frame, [], true);
+    }],
+    ["still frame, Uint8Array, internal luma", async () => {
+      const { core } = await freshCore(W, H);
+      return accepted(core, new Uint8Array(frame.buffer), [], true);
+    }],
+    ["still frame, plain Array, internal luma", async () => {
+      const { core } = await freshCore(W, H);
+      return accepted(core, Array.from(frame), [], true);
+    }],
+    ["still frame, external luma", async () => {
+      const { core } = await freshCore(W, H);
+      return accepted(core, frame, jsLuma(frame, W, H), false);
+    }],
+    ["oversize frame is rejected", async () => {
+      const { core } = await freshCore(W, H);
+      return rejected(core, new Uint8Array(W * H * 4 + 4096), [], true);
+    }],
+    ["undersize frame is rejected", async () => {
+      const { core } = await freshCore(W, H);
+      return rejected(core, new Uint8Array(W * H * 4 - 4), [], true);
+    }],
+    ["wrong-length external luma is rejected", async () => {
+      const { core } = await freshCore(W, H);
+      return rejected(core, frame, new Uint8Array(W * H - 1), false);
+    }],
+    ["before setup is rejected", async () => {
+      const mod = await newModule();
+      const ret = new mod.ARToolKitCore().passVideoData(frame, [], true);
+      return ret === -1 ? null : `returned ${ret}, expected -1`;
+    }],
+    ["after teardown is rejected", async () => {
+      const { core } = await freshCore(W, H);
+      core.teardown();
+      const ret = core.passVideoData(frame, [], true);
+      return ret === -1 ? null : `returned ${ret}, expected -1`;
+    }],
+    ["re-setup at 1280x720", async () => {
+      const { core, cameraId } = await freshCore(W, H);
+      const first = accepted(core, frame, [], true);
+      if (first) return `at 640x480: ${first}`;
+      core.teardown();
+      core.setup(1280, 720, cameraId);
+      detectBarcodes(core);
+      return accepted(core, stillFrame(1280, 720), [], true);
+    }],
+  ];
+
+  // Never core.delete() here: teardown() followed by the destructor frees the
+  // pattern handle twice (#48).
+  let failures = 0;
+  for (const [name, run] of checks) {
+    let detail;
+    try {
+      detail = await run();
+    } catch (e) {
+      detail = `threw ${e}`;
+    }
+    if (detail) failures++;
+    say(detail ? `FAIL ${name}: ${detail}` : `PASS ${name}`);
+  }
+
+  const WARM_UP = 20;
+  const RUNS = 300;
+  for (const [w, h] of [[640, 480], [1280, 720]]) {
+    const { core } = await freshCore(w, h);
+    const benchFrame = stillFrame(w, h);
+    for (let i = 0; i < WARM_UP; i++) core.passVideoData(benchFrame, [], true);
+    const t0 = performance.now();
+    for (let i = 0; i < RUNS; i++) core.passVideoData(benchFrame, [], true);
+    const ms = (performance.now() - t0) / RUNS;
+    say(`BENCH passVideoData ${w}x${h} internal luma: ${ms.toFixed(3)} ms/frame`);
+  }
+
+  say(failures ? `FAILED (${failures})` : "ALL PASS");
+  document.title = failures ? "FAIL" : "PASS";
+</script>
+</body>
+</html>
