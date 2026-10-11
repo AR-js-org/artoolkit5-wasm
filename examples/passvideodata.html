@@ -95,12 +95,17 @@
     return null;
   }
 
-  // Passes when the call returns -1 and a correct frame afterwards still works.
+  // Passes when the call returns -1 and leaves the previous frame intact. The
+  // marker frame goes in first; the rejected buffers are black, so any write
+  // of them over the frame or the luma stops barcode 5 being detected, which
+  // is checked without uploading again.
   function rejected(core, videoFrame, videoLuma, internalLuma) {
+    const before = accepted(core, frame, [], true);
+    if (before) return `the frame before it failed: ${before}`;
     const ret = core.passVideoData(videoFrame, videoLuma, internalLuma);
     if (ret !== -1) return `returned ${ret}, expected -1`;
-    const after = accepted(core, frame, [], true);
-    return after && `rejected, but the next correct frame failed: ${after}`;
+    if (!detectsBarcode5(core)) return "returned -1, but the previous frame was overwritten";
+    return null;
   }
 
   const checks = [
@@ -130,7 +135,9 @@
     }],
     ["wrong-length external luma is rejected", async () => {
       const { core } = await freshCore(W, H);
-      return rejected(core, frame, new Uint8Array(W * H - 1), false);
+      // A black frame of the right size: written before the luma length is
+      // checked, it would hide the marker.
+      return rejected(core, new Uint8Array(W * H * 4), new Uint8Array(W * H - 1), false);
     }],
     ["before setup is rejected", async () => {
       const mod = await newModule();
