@@ -64,35 +64,42 @@ const pattId = await addMarkerFromUrl(mod, core, 'path/to/patt.hiro', '/data/pat
 ---
 
 ### 3. 📹 Video Frame Processing & Tracking
-Pass video frame data to the WebAssembly module and detect markers inside your frame loop (e.g. `requestAnimationFrame`):
+Pass video frame data to the WebAssembly module and detect markers inside your frame loop (e.g. `requestAnimationFrame`).
+
+`passVideoData(frame, luma, internalLuma)` takes the RGBA bytes of a frame of exactly the
+`width × height` given to `setup()`, for example `getImageData(0, 0, width, height).data`
+(a `Uint8ClampedArray`; a `Uint8Array` or a plain array also works). With `internalLuma` set to
+`true` the luma is computed from the frame and the second argument is ignored; with `false`, pass
+a `width × height` luma buffer. It returns `0`, or `-1` without touching the previous frame when a
+buffer has the wrong size or `setup()` has not run.
 
 ```javascript
 // Initialize camera tracker dimensions
 core.setup(width, height, cameraID);
 
-function processFrame(videoElementData, videoLumaData) {
-  // Pass video frames as Uint8Array/typed arrays
-  core.passVideoData(videoElementData, videoLumaData, true);
+function processFrame(imageData) {
+  // RGBA bytes of a width x height frame; the luma is computed internally
+  if (core.passVideoData(imageData.data, [], true) !== 0) {
+    return;
+  }
 
-  // Run marker detection
-  const numDetected = core.detectMarker();
-  if (numDetected > 0) {
-    const markerNum = core.getMarkerNum();
-    
-    for (let i = 0; i < markerNum; i++) {
-      const markerInfo = core.getMarkerInfo(i);
-      
-      // Calculate pose matrix (places calculation result in a shared C++ memory address)
-      const markerWidth = 80; // physical width of marker in millimeters
-      core.getTransMatSquare(i, markerWidth);
+  // Run marker detection. detectMarker() returns a status (0 on success), not a count.
+  core.detectMarker();
+  const markerNum = core.getMarkerNum();
 
-      // Access the 3x4 pose matrix directly from WASM heap to avoid copying overhead
-      const ptr = core.getTransform();
-      const poseMatrix = mod.HEAPF64.subarray(ptr >> 3, (ptr >> 3) + 12);
-      
-      console.log(`Detected Marker ID: ${markerInfo.id}`);
-      console.log("3x4 Transform Matrix:", poseMatrix);
-    }
+  for (let i = 0; i < markerNum; i++) {
+    const markerInfo = core.getMarkerInfo(i);
+
+    // Calculate pose matrix (places calculation result in a shared C++ memory address)
+    const markerWidth = 80; // physical width of marker in millimeters
+    core.getTransMatSquare(i, markerWidth);
+
+    // Access the 3x4 pose matrix directly from WASM heap to avoid copying overhead
+    const ptr = core.getTransform();
+    const poseMatrix = mod.HEAPF64.subarray(ptr >> 3, (ptr >> 3) + 12);
+
+    console.log(`Detected Marker ID: ${markerInfo.id}`);
+    console.log("3x4 Transform Matrix:", poseMatrix);
   }
 }
 ```
