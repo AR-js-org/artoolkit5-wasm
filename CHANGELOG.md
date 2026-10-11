@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-11
+
 ### Added
 
 - `examples/passvideodata.html`: detects the barcode in `examples/data/marker_05_3x3.jpg` from a
@@ -292,7 +294,8 @@ Initial published release.
 - CI, and the package published under the `@ar-js-org` npm scope under the MIT
   licence.
 
-[Unreleased]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/AR-js-org/artoolkit5-wasm/compare/v0.2.0...v0.3.0
