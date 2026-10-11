@@ -36,9 +36,10 @@
   const H = 480;
   const MARKER_SIZE = 252; // data/marker_05_3x3.jpg is 252x252
 
-  const marker = new Image();
-  marker.src = "./data/marker_05_3x3.jpg";
-  await marker.decode();
+  // createImageBitmap rather than Image.decode(), which can stay pending in a
+  // background tab when the image comes from the cache.
+  const markerResponse = await fetch("./data/marker_05_3x3.jpg");
+  const marker = await createImageBitmap(await markerResponse.blob());
 
   // Every check gets its own module: an older build that copies past the end
   // of its frame buffer must not corrupt the heap the next check runs on.
@@ -167,16 +168,21 @@
     say(detail ? `FAIL ${name}: ${detail}` : `PASS ${name}`);
   }
 
+  // Internal luma is what consumers use; external luma isolates the cost of
+  // getting the frame into the heap, without the RGBA -> luma conversion.
   const WARM_UP = 20;
   const RUNS = 300;
   for (const [w, h] of [[640, 480], [1280, 720]]) {
     const { core } = await freshCore(w, h);
     const benchFrame = stillFrame(w, h);
-    for (let i = 0; i < WARM_UP; i++) core.passVideoData(benchFrame, [], true);
-    const t0 = performance.now();
-    for (let i = 0; i < RUNS; i++) core.passVideoData(benchFrame, [], true);
-    const ms = (performance.now() - t0) / RUNS;
-    say(`BENCH passVideoData ${w}x${h} internal luma: ${ms.toFixed(3)} ms/frame`);
+    const benchLuma = jsLuma(benchFrame, w, h);
+    for (const [label, luma, internal] of [["internal", [], true], ["external", benchLuma, false]]) {
+      for (let i = 0; i < WARM_UP; i++) core.passVideoData(benchFrame, luma, internal);
+      const t0 = performance.now();
+      for (let i = 0; i < RUNS; i++) core.passVideoData(benchFrame, luma, internal);
+      const ms = (performance.now() - t0) / RUNS;
+      say(`BENCH passVideoData ${w}x${h} ${label} luma: ${ms.toFixed(3)} ms/frame`);
+    }
   }
 
   say(failures ? `FAILED (${failures})` : "ALL PASS");
