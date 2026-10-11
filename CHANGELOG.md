@@ -44,9 +44,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The wasm is rebuilt because the C++ changed, in the same debug configuration as before (#19). No
 binding changes: `dist/artoolkit5.js` differs only in dropping the now-unused
-`_emval_array_to_memory_view` import and in shifted `ASM_CONSTS` addresses. artoolkit5-ts and
-arjs-plugin-artoolkit pass a canvas frame of the size they set up, so they are unaffected; a
-caller passing a buffer of another size now gets `-1` instead of corrupted memory.
+`_emval_array_to_memory_view` import and in shifted `ASM_CONSTS` addresses.
+
+Consumers are unaffected for frames of the size they set up, which is the normal case. When a
+frame's size differs, the result changes, and two consumers can meet that today:
+
+- **arjs-plugin-artoolkit** sets the core up at the size of the first frame, then draws every
+  later frame at that frame's own size.
+- **artoolkit5-ts** ignores `passVideoData`'s return value and calls `detectMarker()` regardless.
+
+So if a source changes resolution after the first frame (for example, a camera track settling at
+another size), every later frame now gets `-1` and a console error. `detectMarker()` then keeps
+detecting the last frame that was accepted. Before, those frames were copied past the end of the
+buffer (larger) or over part of it (smaller). The fix belongs downstream: check the return value,
+and set the core up again when the frame size changes.
 
 ## [0.4.1] - 2026-10-08
 
